@@ -1369,9 +1369,9 @@
                 year: 1,
                 cash: 10000,
                 netWorth: 10000,
-                salary: 1200,
+                salary: 0,
                 expenses: 800,
-                jobTitle: 'Reponedor de Supermercado',
+                jobTitle: 'Desempleado',
                 inventory: {
                     stocks: [],
                     realEstate: []
@@ -1388,7 +1388,19 @@
                     assets: [0],
                     debt: [0],
                     labels: ['Inicio']
-                }
+                },
+                tutorialState: {
+                    initial: false,
+                    education: false,
+                    job: false,
+                    market: false,
+                    realEstate: false,
+                    company: false
+                },
+                // Job Persistence
+                currentCareerPath: 'none',
+                monthsInCurrentJob: 0,
+                monthsSinceLastRaise: 0
             };
 
             function updateNetWorth() {
@@ -1775,20 +1787,11 @@
                     const absoluteCap = Math.max(5000, GameState.netWorth * 2);
                     return Math.min(Math.floor(maxPrincipal), absoluteCap);
                 },
-                takeLoan(amount, years) {
-                    if (amount <= 0) return { success: false, message: 'La cantidad debe ser mayor a 0' };
 
-                    const max = this.getMaxLoanAmount();
-                    const currentDebt = GameState.loans.reduce((sum, l) => sum + l.remainingBalance, 0);
-                    const available = Math.max(0, max - currentDebt);
-
-                    if (amount > available) return { success: false, message: `Límite excedido. Te quedan ${formatCurrency(available)} de crédito disponible (Total: ${formatCurrency(max)}).` };
-
-                    const isBusiness = !!GameState.company;
-                    const annualRate = isBusiness ? 0.05 : this.INTEREST_RATES.personal;
-
+                createLoan(amount, isBusiness = false) {
+                    const annualRate = isBusiness ? this.INTEREST_RATES.business : this.INTEREST_RATES.personal;
                     const monthlyRate = annualRate / 12;
-                    const termMonths = years * 12;
+                    const termMonths = 60; // 5 years fixed for personal/business loans
                     const monthlyPayment = (amount * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -termMonths));
                     const loan = {
                         id: Date.now(),
@@ -1804,6 +1807,46 @@
                     GameState.cash += amount;
                     return { success: true, message: `Préstamo concedido. Cuota: ${monthlyPayment.toFixed(2)}€/mes` };
                 },
+
+                takeLoan(amount, years) {
+                    if (amount <= 0) return { success: false, message: 'La cantidad debe ser mayor a 0' };
+
+                    const max = this.getMaxLoanAmount();
+                    const currentDebt = GameState.loans.reduce((sum, l) => sum + l.remainingBalance, 0);
+                    const available = Math.max(0, max - currentDebt);
+
+                    if (amount > available) return { success: false, message: `Límite excedido. Te quedan ${formatCurrency(available)} de crédito disponible (Total: ${formatCurrency(max)}).` };
+
+                    const isBusiness = !!GameState.company;
+                    return this.createLoan(amount, isBusiness);
+                },
+
+                payLoanPartial(loanId, amount) {
+                    const loan = GameState.loans.find(l => l.id === loanId);
+                    if (!loan) return { success: false, message: 'Préstamo no encontrado' };
+                    if (amount <= 0) return { success: false, message: 'Cantidad inválida' };
+                    if (GameState.cash < amount) return { success: false, message: 'No tienes suficiente dinero' };
+                    if (amount > loan.remainingBalance) amount = loan.remainingBalance;
+
+                    GameState.cash -= amount;
+                    loan.remainingBalance -= amount;
+
+                    if (loan.remainingBalance < 1) {
+                        // Fully paid
+                        const idx = GameState.loans.indexOf(loan);
+                        GameState.loans.splice(idx, 1);
+                        return { success: true, message: '¡Préstamo liquidado totalmente!' };
+                    } else {
+                        // Recalculate Quota (Reduce Quota, keep term)
+                        // Formula: P * r / (1 - (1+r)^-n)
+                        const r = loan.interestRate / 12;
+                        const n = loan.remainingMonths;
+                        loan.monthlyPayment = (loan.remainingBalance * r) / (1 - Math.pow(1 + r, -n));
+
+                        return { success: true, message: `Amortización realizada. Nueva cuota: ${formatCurrency(loan.monthlyPayment)}/mes` };
+                    }
+                },
+
                 payLoanTotally(loanId) {
                     const loanIndex = GameState.loans.findIndex(l => l.id === loanId);
                     if (loanIndex === -1) return { success: false, message: 'Préstamo no encontrado' };
@@ -1845,41 +1888,107 @@
              *******************************************************/
             const RealEstate = {
                 availableProperties: [],
-                types: [
-                    { name: 'Plaza de Garaje', minPrice: 15000, maxPrice: 30000, yield: 0.05, icon: '🚗' },
-                    { name: 'Piso Pequeño', minPrice: 80000, maxPrice: 150000, yield: 0.045, icon: '🏢' },
-                    { name: 'Apartamento Turístico', minPrice: 120000, maxPrice: 200000, yield: 0.06, icon: '🏖️' },
-                    { name: 'Local Comercial', minPrice: 200000, maxPrice: 400000, yield: 0.055, icon: '🏪' },
-                    { name: 'Chalet', minPrice: 400000, maxPrice: 800000, yield: 0.035, icon: '🏡' }
-                ],
+                PROPERTY_TYPES: {
+                    'Residencial': [
+                        { name: 'Estudio urbano compacto', minM2: 25, maxM2: 35, minPrice: 1500, maxPrice: 3500, icon: '🏢' },
+                        { name: 'Piso pequeño 1 dormitorio', minM2: 40, maxM2: 55, minPrice: 1500, maxPrice: 3000, icon: '🏢' },
+                        { name: 'Piso mediano 2-3 dormitorios', minM2: 70, maxM2: 90, minPrice: 1500, maxPrice: 3000, icon: '🏢' },
+                        { name: 'Piso grande familiar', minM2: 100, maxM2: 130, minPrice: 1400, maxPrice: 2800, icon: '🏢' },
+                        { name: 'Ático con terraza', minM2: 70, maxM2: 120, minPrice: 2000, maxPrice: 4500, icon: '🏠' }
+                    ],
+                    'Turistico': [
+                        { name: 'Apto. turístico estudio', minM2: 25, maxM2: 35, minPrice: 2000, maxPrice: 5000, icon: '🏖️' },
+                        { name: 'Apto. turístico 1-2 hab', minM2: 45, maxM2: 70, minPrice: 2000, maxPrice: 5000, icon: '🏖️' },
+                        { name: 'Edificio aptos. turísticos', minM2: 250, maxM2: 400, minPrice: 1800, maxPrice: 4000, icon: '🏨' },
+                        { name: 'Coliving optimizado', minM2: 90, maxM2: 140, minPrice: 1600, maxPrice: 3200, icon: '🛏️' },
+                        { name: 'Hotel urbano pequeño', minM2: 800, maxM2: 1500, minPrice: 1500, maxPrice: 4000, icon: '🏨' }
+                    ],
+                    'Garajes': [
+                        { name: 'Garaje pequeño', minM2: 5, maxM2: 10, minPrice: 800, maxPrice: 2000, icon: '🚗' },
+                        { name: 'Garaje mediano', minM2: 10, maxM2: 15, minPrice: 800, maxM2: 2000, icon: '🚗' },
+                        { name: 'Garaje grande', minM2: 15, maxM2: 25, minPrice: 800, maxPrice: 2000, icon: '🚗' },
+                        { name: 'Trastero pequeño', minM2: 1, maxM2: 3, minPrice: 600, maxPrice: 1800, icon: '📦' },
+                        { name: 'Box self-storage', minM2: 8, maxM2: 15, minPrice: 700, maxPrice: 2000, icon: '📦' }
+                    ],
+                    'Comercial': [
+                        { name: 'Local comercial pequeño', minM2: 30, maxM2: 60, minPrice: 1000, maxPrice: 4000, icon: '🏪' },
+                        { name: 'Local comercial mediano', minM2: 80, maxM2: 150, minPrice: 1500, maxPrice: 6000, icon: '🏪' },
+                        { name: 'Oficina edificio', minM2: 80, maxM2: 200, minPrice: 1500, maxPrice: 4000, icon: '💼' },
+                        { name: 'Nave industrial pequeña', minM2: 300, maxM2: 600, minPrice: 400, maxPrice: 1200, icon: '🏭' }
+                    ],
+                    'Suelo': [
+                        { name: 'Solar urbano edificable', minM2: 400, maxM2: 800, minPrice: 300, maxPrice: 1500, icon: '🏗️' }
+                    ],
+                    'Lujo': [
+                        { name: 'Piso de Lujo Prime', minM2: 120, maxM2: 200, minPrice: 8000, maxPrice: 15000, icon: '💎' },
+                        { name: 'Ático Dúplex Lujo', minM2: 150, maxM2: 250, minPrice: 9000, maxPrice: 18000, icon: '💎' },
+                        { name: 'Villa de Lujo Prime', minM2: 400, maxM2: 800, minPrice: 6000, maxPrice: 12000, icon: '🏰' },
+                        { name: 'Mansión Súper Lujo', minM2: 800, maxM2: 1500, minPrice: 8000, maxPrice: 20000, icon: '🏰' },
+                        { name: 'Apto. Lujo Playa', minM2: 120, maxM2: 220, minPrice: 6000, maxPrice: 20000, icon: '🏖️' },
+                        { name: 'Villa Lujo Mar', minM2: 300, maxM2: 700, minPrice: 8000, maxPrice: 25000, icon: '🏰' },
+                        { name: 'Piso Ultra High-End', minM2: 200, maxM2: 400, minPrice: 12000, maxM2: 25000, icon: '💎' },
+                        { name: 'Penthouse Vistas 360', minM2: 250, maxM2: 500, minPrice: 15000, maxPrice: 30000, icon: '💎' },
+                        { name: 'Casa Histórica Lujo', minM2: 300, maxM2: 700, minPrice: 7000, maxPrice: 18000, icon: '🏛️' },
+                        { name: 'Residencial Boutique', minM2: 800, maxM2: 2000, minPrice: 7000, maxPrice: 16000, icon: '💎' }
+                    ]
+                },
+                availableProperties: [],
                 marketTrend: 1.0, // 1.0 = neutral
+
+                createProperty() {
+                    const categories = Object.keys(this.PROPERTY_TYPES);
+                    const cat = categories[Math.floor(Math.random() * categories.length)];
+                    const subTypes = this.PROPERTY_TYPES[cat];
+                    const typeVar = subTypes[Math.floor(Math.random() * subTypes.length)];
+
+                    const sizeM2 = Math.floor(Math.random() * (typeVar.maxM2 - typeVar.minM2) + typeVar.minM2);
+                    const pricePerM2 = Math.floor(Math.random() * (typeVar.maxPrice - typeVar.minPrice) + typeVar.minPrice);
+
+                    const finalPricePerM2 = Math.floor(pricePerM2 * this.marketTrend);
+                    const price = sizeM2 * finalPricePerM2;
+                    const zoneAvgPrice = Math.floor(finalPricePerM2 * (1 + ((Math.random() * 0.2) - 0.1)));
+
+                    let baseYield = 0.045;
+                    if (cat === 'Garajes') baseYield = 0.055;
+                    if (cat === 'Turistico') baseYield = 0.06;
+                    if (cat === 'Lujo') baseYield = 0.03;
+                    if (cat === 'Suelo') baseYield = 0.01;
+
+                    const actualYield = baseYield + ((Math.random() * 0.02) - 0.01);
+                    const monthlyRent = Math.floor((price * actualYield) / 12);
+
+                    return {
+                        id: Date.now() + Math.floor(Math.random() * 100000),
+                        name: typeVar.name,
+                        price: price,
+                        monthlyRent: monthlyRent,
+                        downPaymentPct: 0.20,
+                        sizeM2: sizeM2,
+                        pricePerM2: finalPricePerM2,
+                        zoneAvgPrice: zoneAvgPrice,
+                        icon: typeVar.icon,
+                        timestamp: Date.now() // Track age
+                    };
+                },
 
                 generateListings() {
                     this.availableProperties = [];
                     for (let i = 0; i < 6; i++) {
-                        const typeVar = this.types[Math.floor(Math.random() * this.types.length)];
-                        const sizeM2 = Math.floor(Math.random() * (200 - 50) + 50);
-                        const baseZonePrice = Math.floor(Math.random() * (4000 - 1500) + 1500);
-                        const marketMarkup = (Math.random() * 0.4) - 0.2;
-                        const pricePerM2 = Math.floor(baseZonePrice * (1 + marketMarkup));
-                        const price = sizeM2 * pricePerM2;
-                        const actualYield = typeVar.yield + (Math.random() * 0.02 - 0.01);
-                        const monthlyRent = Math.floor((price * actualYield) / 12);
-
-                        this.availableProperties.push({
-                            id: Date.now() + i,
-                            name: typeVar.name,
-                            price: price,
-                            monthlyRent: monthlyRent,
-                            downPaymentPct: 0.20,
-                            sizeM2: sizeM2,
-                            zoneAvgPrice: baseZonePrice,
-                            icon: typeVar.icon // Persist icon
-                        });
+                        this.availableProperties.push(this.createProperty());
                     }
                 },
 
                 nextTurn() {
+                    // 1. Cycle Market: Remove oldest available, add new one
+                    if (this.availableProperties.length > 0) {
+                        // Assuming index 0 is oldest due to push order
+                        this.availableProperties.shift();
+                    }
+                    if (this.availableProperties.length < 6) {
+                        this.availableProperties.push(this.createProperty());
+                    }
+
+                    // 2. Price Evolution
                     const change = (Math.random() * 0.06) - 0.025;
                     this.marketTrend *= (1 + change);
                     GameState.inventory.realEstate.forEach(prop => {
@@ -1889,7 +1998,7 @@
                     });
                 },
 
-                buyProperty(propertyId, useMortgage = true) {
+                buyProperty(propertyId, useMortgage = true, termYears = 30) {
                     const propertyIndex = this.availableProperties.findIndex(p => p.id === propertyId);
                     if (propertyIndex === -1) return { success: false, message: 'Propiedad no encontrada' };
                     const property = this.availableProperties[propertyIndex];
@@ -1902,13 +2011,13 @@
 
                     if (useMortgage && loanAmount > 0) {
                         const r = Bank.INTEREST_RATES.mortgage / 12;
-                        const n = 240;
+                        const n = termYears * 12;
                         const monthlyPayment = (loanAmount * r) / (1 - Math.pow(1 + r, -n));
                         const mortgageId = Date.now();
 
                         GameState.loans.push({
                             id: mortgageId,
-                            type: 'Hipotecario',
+                            type: `Hipotecario (${termYears} años)`,
                             principal: loanAmount,
                             termMonths: n,
                             remainingMonths: n,
@@ -1956,10 +2065,20 @@
              *******************************************************/
             const EducationModule = {
                 courses: [
-                    { id: 'fp_informatica', name: 'FP Desarrollo Web', type: 'FP', costYear: 500, durationMonths: 12, level: 1 },
-                    { id: 'grado_economia', name: 'Grado en Economía', type: 'Carrera', costYear: 1500, durationMonths: 24, level: 2 },
-                    { id: 'grado_ing_sw', name: 'Ingeniería Software', type: 'Carrera', costYear: 2000, durationMonths: 24, level: 2 },
-                    { id: 'master_mba', name: 'Máster MBA', type: 'Master', costYear: 5000, durationMonths: 12, level: 3, req: 'Carrera' }
+                    // FPs (12 Meses)
+                    { id: 'fp_admin', name: 'FP Sup. Administración y Finanzas', type: 'FP', costYear: 1000, durationMonths: 12, level: 1 },
+                    { id: 'fp_dam', name: 'FP Sup. Desarrollo Apps', type: 'FP', costYear: 1200, durationMonths: 12, level: 1 },
+                    { id: 'fp_maint', name: 'FP Sup. Mantenimiento', type: 'FP', costYear: 1000, durationMonths: 12, level: 1 },
+
+                    // GRADOS (24 Meses)
+                    { id: 'grado_ade', name: 'Grado en ADE', type: 'Carrera', costYear: 2500, durationMonths: 24, level: 2 },
+                    { id: 'grado_cs', name: 'Grado en Ing. Informática', type: 'Carrera', costYear: 3000, durationMonths: 24, level: 2 },
+                    { id: 'grado_civil', name: 'Grado en Ing. Civil', type: 'Carrera', costYear: 2800, durationMonths: 24, level: 2 },
+
+                    // MASTERS (6 Meses, Require Grado)
+                    { id: 'master_fin', name: 'Máster en Dirección Financiera', type: 'Master', costYear: 4500, durationMonths: 6, level: 3, req: 'Grado en ADE' },
+                    { id: 'master_data', name: 'Máster en IA y Ciberseguridad', type: 'Master', costYear: 5000, durationMonths: 6, level: 3, req: 'Grado en Ing. Informática' },
+                    { id: 'master_civil', name: 'Máster Habilitante Ingeniería', type: 'Master', costYear: 4800, durationMonths: 6, level: 3, req: 'Grado en Ing. Civil' }
                 ],
 
                 getCourse(id) {
@@ -1972,8 +2091,10 @@
                     const cost = course.costYear;
                     if (GameState.cash < cost) return { success: false, message: 'No tienes dinero suficiente para la matrícula.' };
 
-                    if (course.req === 'Carrera' && !GameState.education.some(e => e.includes('Grado') || e.includes('Ingeniería'))) {
-                        return { success: false, message: 'Necesitas una carrera previa.' };
+                    // Strict Requirement Check
+                    if (course.req) {
+                        const hasReq = GameState.education.includes(course.req);
+                        if (!hasReq) return { success: false, message: `Requisito no cumplido: Necesitas ${course.req}.` };
                     }
 
                     GameState.cash -= cost;
@@ -2001,34 +2122,15 @@
                     GameState.isStudying = false;
                     GameState.currentCourse = null;
 
-                    let message = `¡Felicidades! Has completado tus estudios: ${course.name}.`;
+                    let message = `¡Felicidades! Has completado: ${course.name}. Ahora puedes acceder a puestos de mayor cualificación.`;
 
-                    let relatedJob = null;
-                    let relatedPath = null;
-
-                    if (course.id.includes('informatica') || course.id.includes('ing_sw')) {
-                        const techPath = JobSystem.careers['tech'];
-                        if (course.type === 'FP' || course.type === 'Carrera') {
-                            relatedPath = 'tech';
-                            relatedJob = techPath.find(j => j.title === 'Becario IT');
-                            if (course.type === 'Carrera') relatedJob = techPath.find(j => j.title === 'Junior Dev');
-                        }
-                    } else if (course.id.includes('economia') || course.id.includes('mba')) {
-                        const commPath = JobSystem.careers['comercio'];
-                        if (course.type === 'Carrera') relatedJob = commPath.find(j => j.title === 'Encargado de Tienda');
-                        if (course.type === 'Master') relatedJob = commPath.find(j => j.title === 'Gerente Regional');
-                    }
-
+                    // Simple alert (or modal bridge via UI if I had access, but alerts were replaced only in Bank)
+                    // We'll trust the game loop wraps this or user sees it next update. 
+                    // Actually, let's just leave the alert for now or cleaner: return logic? 
+                    // No, completeCourse is called by nextTurn loop.
                     alert(message);
                     UI.updateEducation(this);
-
-                    if (relatedJob && relatedPath) {
-                        if (confirm(`GRACIAS A TUS ESTUDIOS: Se ha abierto una vacante para ${relatedJob.title} (${relatedJob.salary}€/mes). ¿Quieres aceptar el puesto/prácticas inmediatamente?`)) {
-                            JobSystem.switchJobEnhanced(relatedPath, relatedJob);
-                            UI.updateJob(JobSystem);
-                            UI.updateDashboard();
-                        }
-                    }
+                    UI.updateJob(JobSystem); // Refresh job board to show green checks
                 }
             };
 
@@ -2371,8 +2473,13 @@
                     let ceoSalary = co.ceoSalary || 0;
                     if (isActive) GameState.salary = ceoSalary;
 
-                    if (co.cash < ceoSalary) ceoSalary = co.cash;
-                    if (ceoSalary > 0) GameState.cash += ceoSalary;
+                    if (co.cash < ceoSalary) {
+                        ceoSalary = co.cash; // Can't pay what you don't have
+                        if (isActive) GameState.salary = ceoSalary;
+                    }
+
+                    // Do NOT add to GameState.cash here. The main loop does it via GameState.salary.
+                    // Just deduct from company.
 
                     const totalExpenses = wageBill + rent + cogs + marketingCost + opEx + ceoSalary;
                     const profit = revenue - totalExpenses;
@@ -2527,23 +2634,192 @@
             /*******************************************************
              * JOB SYSTEM
              *******************************************************/
+            const BossMessages = {
+                positive: [
+                    "Has superado las expectativas este año. Te lo mereces.",
+                    "Tu rendimiento ha sido excelente. Aquí tienes tu recompensa.",
+                    "Valoramos mucho tu compromiso con la empresa.",
+                    "Eres una pieza clave en el equipo. Sigue así.",
+                    "Me ha impresionado tu productividad. Aumento concedido.",
+                    "Tus resultados hablan por sí solos. Buen trabajo.",
+                    "La dirección está muy contenta contigo.",
+                    "Es justo reconocer tu esfuerzo con hechos.",
+                    "Gracias por tu dedicación extra. Disfruta del aumento.",
+                    "Personas como tú hacen crecer esta empresa.",
+                    "Tu liderazgo informal ha sido notable.",
+                    "Has gestionado los problemas con gran eficacia.",
+                    "Tu actitud positiva contagia al equipo. Gracias.",
+                    "Este aumento es solo el principio si sigues así.",
+                    "Confío plenamente en tu capacidad. Adelante.",
+                    "Tus métricas están por encima de la media. Felicidades.",
+                    "Has sabido adaptarte a los cambios. Bien hecho.",
+                    "Tu lealtad y esfuerzo tienen recompensa.",
+                    "Veo un gran futuro para ti aquí.",
+                    "Aprobado sin dudarlo. ¡Enhorabuena!"
+                ],
+                negative: [
+                    "El presupuesto está ajustado, pero haré una excepción pequeña.",
+                    "Esperaba más de ti, pero te daré un voto de confianza.",
+                    "No es el mejor momento para la empresa, confórmate con esto.",
+                    "Tu rendimiento ha sido justo, igual que este aumento.",
+                    "Te lo doy porque llevas tiempo, no por brillar.",
+                    "Deberías agradecer que haya algo de subida este año.",
+                    "Espero ver mejores números el próximo trimestre.",
+                    "No me convences del todo, pero vale.",
+                    "Considera esto un aviso: necesito más implicación.",
+                    "El mercado está difícil, esto es lo máximo posible.",
+                    "Otros lo merecían más, pero aquí tienes algo.",
+                    "No te acostumbres. El año que viene quiero más.",
+                    "A regañadientes, administración lo ha aprobado.",
+                    "Es poco, pero es mejor que nada.",
+                    "Tu actitud debe mejorar. Tómalo como incentivo.",
+                    "Estás en la cuerda floja, aprovéchalo.",
+                    "Ha costado convencer a finanzas. No me falles.",
+                    "Más vale pájaro en mano... aquí tienes un poco.",
+                    "No es lo que pedías, pero es lo que hay.",
+                    "Haz que valga la pena cada céntimo extra."
+                ]
+            };
+
             const JobSystem = {
                 careers: {
-                    'comercio': [
-                        { title: 'Reponedor', salary: 1100, reqMonths: 0, reqEdu: null },
-                        { title: 'Cajero', salary: 1300, reqMonths: 6, reqEdu: null },
-                        { title: 'Encargado de Tienda', salary: 1800, reqMonths: 24, reqEdu: 'FP' },
-                        { title: 'Gerente Regional', salary: 3500, reqMonths: 60, reqEdu: 'Carrera' }
+                    // --- BASICO ---
+                    'unskilled': [
+                        { title: 'Reponedor / Auxiliar', salary: 1000, reqMonths: 0, reqEdu: null },
+                        { title: 'Cajero / Atención', salary: 1150, reqMonths: 6, reqEdu: null },
+                        { title: 'Supervisor de Planta', salary: 1400, reqMonths: 24, reqEdu: null }
                     ],
-                    'tech': [
-                        { title: 'Becario IT', salary: 800, reqMonths: 0, reqEdu: 'FP' },
-                        { title: 'Junior Dev', salary: 1800, reqMonths: 6, reqEdu: 'FP' },
-                        { title: 'Senior Dev', salary: 3200, reqMonths: 36, reqEdu: 'Carrera' },
-                        { title: 'CTO', salary: 6000, reqMonths: 96, reqEdu: 'Master' }
+
+                    // --- FP ADMINISTRACION ---
+                    'admin_contable': [
+                        { title: 'Administrativo contable', salary: 1300, reqMonths: 0, reqEdu: 'FP Sup. Administración y Finanzas' },
+                        { title: 'Administrativo senior', salary: 1700, reqMonths: 12, reqEdu: 'FP Sup. Administración y Finanzas' },
+                        { title: 'Técnico de gestión financiera', salary: 2200, reqMonths: 30, reqEdu: 'FP Sup. Administración y Finanzas' },
+                        { title: 'Responsable administrativo', salary: 3000, reqMonths: 60, reqEdu: 'FP Sup. Administración y Finanzas' }
+                    ],
+                    'gestor_cobros': [
+                        { title: 'Gestor de cobros / facturación', salary: 1300, reqMonths: 0, reqEdu: 'FP Sup. Administración y Finanzas' },
+                        { title: 'Responsable de facturación', salary: 1700, reqMonths: 12, reqEdu: 'FP Sup. Administración y Finanzas' },
+                        { title: 'Credit controller', salary: 2200, reqMonths: 30, reqEdu: 'FP Sup. Administración y Finanzas' },
+                        { title: 'Jefe de admi. de clientes', salary: 3000, reqMonths: 60, reqEdu: 'FP Sup. Administración y Finanzas' }
+                    ],
+                    'admin_inmo': [
+                        { title: 'Administrativo comercial inmo.', salary: 1300, reqMonths: 0, reqEdu: 'FP Sup. Administración y Finanzas' },
+                        { title: 'Gestor de operaciones inmo.', salary: 1800, reqMonths: 18, reqEdu: 'FP Sup. Administración y Finanzas' },
+                        { title: 'Responsable de oficina inmo.', salary: 2400, reqMonths: 36, reqEdu: 'FP Sup. Administración y Finanzas' },
+                        { title: 'Director de zona', salary: 3200, reqMonths: 72, reqEdu: 'FP Sup. Administración y Finanzas' }
+                    ],
+
+                    // --- FP DAM ---
+                    'prog_apps': [
+                        { title: 'Programador junior (FP)', salary: 1500, reqMonths: 0, reqEdu: 'FP Sup. Desarrollo Apps' },
+                        { title: 'Programador semi‑senior', salary: 2000, reqMonths: 18, reqEdu: 'FP Sup. Desarrollo Apps' },
+                        { title: 'Desarrollador senior', salary: 2700, reqMonths: 36, reqEdu: 'FP Sup. Desarrollo Apps' },
+                        { title: 'Tech lead', salary: 3800, reqMonths: 72, reqEdu: 'FP Sup. Desarrollo Apps' }
+                    ],
+                    'sys_support': [
+                        { title: 'Técnico de soporte y sistemas', salary: 1400, reqMonths: 0, reqEdu: 'FP Sup. Desarrollo Apps' },
+                        { title: 'Administrador de sistemas', salary: 1900, reqMonths: 24, reqEdu: 'FP Sup. Desarrollo Apps' },
+                        { title: 'Ingeniero de sistemas', salary: 2500, reqMonths: 42, reqEdu: 'FP Sup. Desarrollo Apps' },
+                        { title: 'Responsable infraest. IT', salary: 3500, reqMonths: 72, reqEdu: 'FP Sup. Desarrollo Apps' }
+                    ],
+                    'mobile_dev': [
+                        { title: 'Desarrollador de apps móviles', salary: 1600, reqMonths: 0, reqEdu: 'FP Sup. Desarrollo Apps' },
+                        { title: 'Mobile developer mid', salary: 2200, reqMonths: 24, reqEdu: 'FP Sup. Desarrollo Apps' },
+                        { title: 'Senior mobile', salary: 3000, reqMonths: 48, reqEdu: 'FP Sup. Desarrollo Apps' },
+                        { title: 'Lead mobile / arquitecto', salary: 4000, reqMonths: 84, reqEdu: 'FP Sup. Desarrollo Apps' }
+                    ],
+
+                    // --- FP MANTENIMIENTO ---
+                    'maint_ind': [
+                        { title: 'Técnico mantenimiento ind.', salary: 1500, reqMonths: 0, reqEdu: 'FP Sup. Mantenimiento' },
+                        { title: 'Técnico senior', salary: 1900, reqMonths: 24, reqEdu: 'FP Sup. Mantenimiento' },
+                        { title: 'Jefe de equipo', salary: 2400, reqMonths: 48, reqEdu: 'FP Sup. Mantenimiento' },
+                        { title: 'Responsable de planta', salary: 3300, reqMonths: 84, reqEdu: 'FP Sup. Mantenimiento' }
+                    ],
+                    'clima': [
+                        { title: 'Técnico de climatización', salary: 1500, reqMonths: 0, reqEdu: 'FP Sup. Mantenimiento' },
+                        { title: 'Oficial de 1ª', salary: 1900, reqMonths: 24, reqEdu: 'FP Sup. Mantenimiento' },
+                        { title: 'Responsable servicio técnico', salary: 2400, reqMonths: 48, reqEdu: 'FP Sup. Mantenimiento' },
+                        { title: 'Jefe operaciones mant.', salary: 3200, reqMonths: 84, reqEdu: 'FP Sup. Mantenimiento' }
+                    ],
+                    'buildings': [
+                        { title: 'Técnico manten. edificios', salary: 1400, reqMonths: 0, reqEdu: 'FP Sup. Mantenimiento' },
+                        { title: 'Encargado de edificio', salary: 1800, reqMonths: 24, reqEdu: 'FP Sup. Mantenimiento' },
+                        { title: 'Supervisor multiedificio', salary: 2300, reqMonths: 48, reqEdu: 'FP Sup. Mantenimiento' },
+                        { title: 'Facility manager', salary: 3200, reqMonths: 84, reqEdu: 'FP Sup. Mantenimiento' }
+                    ],
+
+                    // --- GRADO ADE ---
+                    'analyst_fin': [
+                        { title: 'Analista financiero', salary: 1600, reqMonths: 0, reqEdu: 'Grado en ADE' },
+                        { title: 'Analista senior', salary: 2300, reqMonths: 36, reqEdu: 'Grado en ADE' },
+                        { title: 'Controller financiero', salary: 3000, reqMonths: 60, reqEdu: 'Máster en Dirección Financiera' },
+                        { title: 'Director financiero (CFO)', salary: 4500, reqMonths: 108, reqEdu: 'Máster en Dirección Financiera' }
+                    ],
+                    'consultant': [
+                        { title: 'Consultor de negocio', salary: 1700, reqMonths: 0, reqEdu: 'Grado en ADE' },
+                        { title: 'Consultor senior', salary: 2500, reqMonths: 36, reqEdu: 'Grado en ADE' },
+                        { title: 'Manager de proyecto', salary: 3500, reqMonths: 72, reqEdu: 'Máster en Dirección Financiera' },
+                        { title: 'Socio / Director', salary: 5000, reqMonths: 120, reqEdu: 'Máster en Dirección Financiera' }
+                    ],
+                    'sales_b2b': [
+                        { title: 'Gestor de cuentas empresa', salary: 1600, reqMonths: 0, reqEdu: 'Grado en ADE' },
+                        { title: 'Key account manager', salary: 2300, reqMonths: 36, reqEdu: 'Grado en ADE' },
+                        { title: 'Sales manager', salary: 3200, reqMonths: 72, reqEdu: 'Grado en ADE' },
+                        { title: 'Director comercial', salary: 4500, reqMonths: 108, reqEdu: 'Máster en Dirección Financiera' }
+                    ],
+
+                    // --- GRADO INFORMATICA ---
+                    'swe': [
+                        { title: 'Ingeniero de software', salary: 1800, reqMonths: 0, reqEdu: 'Grado en Ing. Informática' },
+                        { title: 'Software engineer mid', salary: 2500, reqMonths: 24, reqEdu: 'Grado en Ing. Informática' },
+                        { title: 'Senior software engineer', salary: 3400, reqMonths: 60, reqEdu: 'Grado en Ing. Informática' },
+                        { title: 'Engineering manager', salary: 4800, reqMonths: 108, reqEdu: 'Máster en IA y Ciberseguridad' }
+                    ],
+                    'data': [
+                        { title: 'Data analyst / BI', salary: 1700, reqMonths: 0, reqEdu: 'Grado en Ing. Informática' },
+                        { title: 'Data analyst senior', salary: 2400, reqMonths: 36, reqEdu: 'Grado en Ing. Informática' },
+                        { title: 'Data scientist', salary: 3300, reqMonths: 60, reqEdu: 'Máster en IA y Ciberseguridad' },
+                        { title: 'Head of data', salary: 5000, reqMonths: 108, reqEdu: 'Máster en IA y Ciberseguridad' }
+                    ],
+                    'devops': [
+                        { title: 'DevOps / cloud engineer', salary: 1800, reqMonths: 0, reqEdu: 'Grado en Ing. Informática' },
+                        { title: 'DevOps mid', salary: 2600, reqMonths: 36, reqEdu: 'Grado en Ing. Informática' },
+                        { title: 'Senior / Cloud architect', salary: 3600, reqMonths: 72, reqEdu: 'Grado en Ing. Informática' },
+                        { title: 'Director infraest. cloud', salary: 5000, reqMonths: 120, reqEdu: 'Máster en IA y Ciberseguridad' }
+                    ],
+
+                    // --- GRADO CIVIL ---
+                    'ing_obra': [
+                        { title: 'Ingeniero de obra', salary: 1700, reqMonths: 0, reqEdu: 'Grado en Ing. Civil' },
+                        { title: 'Jefe de obra', salary: 2400, reqMonths: 36, reqEdu: 'Grado en Ing. Civil' },
+                        { title: 'Jefe de proyecto', salary: 3300, reqMonths: 72, reqEdu: 'Máster Habilitante Ingeniería' },
+                        { title: 'Director construcción', salary: 4700, reqMonths: 120, reqEdu: 'Máster Habilitante Ingeniería' }
+                    ],
+                    'oficina_tecnica': [
+                        { title: 'Técnico oficina técnica', salary: 1600, reqMonths: 0, reqEdu: 'Grado en Ing. Civil' },
+                        { title: 'Ingeniero de proyectos', salary: 2300, reqMonths: 36, reqEdu: 'Grado en Ing. Civil' },
+                        { title: 'Responsable of. técnica', salary: 3000, reqMonths: 72, reqEdu: 'Grado en Ing. Civil' },
+                        { title: 'Director técnico', salary: 4300, reqMonths: 108, reqEdu: 'Máster Habilitante Ingeniería' }
+                    ],
+                    'urbz_consult': [
+                        { title: 'Consultor ingeniería / urb.', salary: 1700, reqMonths: 0, reqEdu: 'Grado en Ing. Civil' },
+                        { title: 'Consultor senior', salary: 2500, reqMonths: 48, reqEdu: 'Grado en Ing. Civil' },
+                        { title: 'Manager consultoría', salary: 3400, reqMonths: 84, reqEdu: 'Máster Habilitante Ingeniería' },
+                        { title: 'Socio / Director cons.', salary: 5000, reqMonths: 132, reqEdu: 'Máster Habilitante Ingeniería' }
                     ]
                 },
-                currentCareerPath: 'comercio',
-                monthsInCurrentJob: 0,
+                get currentCareerPath() { return GameState.currentCareerPath || 'none'; },
+                set currentCareerPath(v) { GameState.currentCareerPath = v; },
+                get monthsInCurrentJob() { return GameState.monthsInCurrentJob || 0; },
+                set monthsInCurrentJob(v) { GameState.monthsInCurrentJob = v; },
+                get monthsSinceLastRaise() { return GameState.monthsSinceLastRaise || 0; },
+                set monthsSinceLastRaise(v) { GameState.monthsSinceLastRaise = v; },
+
+                getCareerPath(pathKey) {
+                    return this.careers[pathKey];
+                },
 
                 nextTurn() {
                     if (GameState.company) {
@@ -2552,8 +2828,10 @@
 
                     if (!GameState.isStudying) {
                         this.monthsInCurrentJob++;
+                        this.monthsSinceLastRaise++;
                     } else {
                         this.monthsInCurrentJob += 0.5;
+                        this.monthsSinceLastRaise += 0.5;
                     }
                 },
 
@@ -2587,6 +2865,11 @@
                 },
 
                 checkEducation(req) {
+                    if (!req) return true;
+                    // Check strict match for new system (e.g. "Grado en ADE")
+                    if (GameState.education.includes(req)) return true;
+
+                    // Legacy Fallback (just in case)
                     return GameState.education.some(e => {
                         if (req === 'FP') return e.includes('FP') || e.includes('Grado') || e.includes('Ingeniería');
                         if (req === 'Carrera') return e.includes('Grado') || e.includes('Ingeniería');
@@ -2622,6 +2905,13 @@
                         return { success: false, message: `Requisito académico no cumplido: ${targetJob.reqEdu}` };
                     }
 
+                    // STRICT EXPERIENCE CHECK
+                    // If applying from outside (Vacancy List), you can only enter at level 0 (Entry Level).
+                    // Higher positions must be earned via Promotion.
+                    if (targetJob.reqMonths > 0) {
+                        return { success: false, message: `Este puesto requiere experiencia interna previa. Debes empezar por un puesto de acceso (Nivel 0) y ascender.` };
+                    }
+
                     if (GameState.company) {
                         if (!confirm('Al aceptar este trabajo cerrarás tu empresa. ¿Seguro?')) return { success: false, message: 'Operación cancelada' };
                         GameState.company = null;
@@ -2636,13 +2926,36 @@
                     GameState.jobTitle = jobObj.title;
                     GameState.salary = jobObj.salary;
                     this.monthsInCurrentJob = 0;
+                    this.monthsSinceLastRaise = 0; // Reset raise timer on new job
+                },
+
+                requestRaise() {
+                    const raisePct = (Math.floor(Math.random() * 6) + 1); // 1 to 6%
+                    let msgList = raisePct >= 3 ? BossMessages.positive : BossMessages.negative;
+                    const msg = msgList[Math.floor(Math.random() * msgList.length)];
+
+                    const oldSalary = GameState.salary;
+                    const increase = Math.floor(oldSalary * (raisePct / 100));
+                    GameState.salary += increase;
+                    this.monthsSinceLastRaise = 0;
+
+                    return {
+                        success: true,
+                        increase: increase,
+                        raisePct: raisePct,
+                        message: `"${msg}"\n\nTu salario ha subido un ${raisePct}% (+${formatCurrency(increase)}).`
+                    };
                 }
             };
 
             /*******************************************************
              * UI
              *******************************************************/
-            const formatCurrency = (amount) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(amount);
+            const formatCurrency = (amount) => {
+                const opts = { style: 'currency', currency: 'EUR' };
+                if (Math.abs(amount) > 99999) opts.maximumFractionDigits = 0;
+                return new Intl.NumberFormat('es-ES', opts).format(amount);
+            };
             const formatPercent = (val) => (val * 100).toFixed(2) + '%';
 
             const UI = {
@@ -2686,14 +2999,16 @@
                     // Also add active company profit if receiving salary/dividends or just raw profit?
                     // Request says "beneficio mes", usually implies net profit of the company.
                     if (GameState.company) {
-                        holdingIncome += (GameState.company.profitLastMonth || 0);
+                        // holdingIncome += (GameState.company.profitLastMonth || 0); 
+                        // FIX: User requested to NOT count company profit in personal flow, only salary.
+                        // Salary is already in GameState.salary.
                     }
 
-                    let loanInterests = 0;
-                    GameState.loans.forEach(l => { loanInterests += (l.remainingBalance * l.interestRate / 12); });
+                    let loanPayments = 0;
+                    GameState.loans.forEach(l => { loanPayments += l.monthlyPayment; });
 
                     const totalIncome = GameState.salary + rentIncome + holdingIncome;
-                    const totalExpenses = GameState.expenses + loanInterests;
+                    const totalExpenses = GameState.expenses + loanPayments;
                     const monthlyFlow = totalIncome - totalExpenses;
 
                     let companyCount = (GameState.company ? 1 : 0) + (GameState.ownedCompanies ? GameState.ownedCompanies.length : 0);
@@ -3084,9 +3399,11 @@
                                                 <div class="loan-progress">
                                                     <div class="loan-bar" style="width:${progress}%"></div>
                                                 </div>
-                                                ${loan.type !== 'Hipotecario' ?
-                                        `<button class="btn-pay-all-dynamic" data-id="${loan.id}" style="width:100%; background:transparent; border:1px solid #ef4444; color:#ef4444; padding:5px; border-radius:4px; cursor:pointer; font-size:0.8rem; margin-top:5px;">Amortizar Todo</button>`
-                                        : ''}
+                                                <div class="loan-actions">
+                                                    <button class="btn-pay-loan" data-id="${loan.id}" style="background:#ef4444; color:white; border:none; border-radius:4px; padding:5px 10px; cursor:pointer; font-size:0.8rem; margin-top:5px;">Liquidar Total</button>
+                                                    <button class="btn-pay-partial" data-id="${loan.id}" style="background:#3b82f6; color:white; border:none; border-radius:4px; padding:5px 10px; cursor:pointer; font-size:0.8rem; margin-top:5px; margin-left:5px;">Amortizar</button>
+                                                </div>
+                                                <div style="font-size:0.75rem; color:#64748b; margin-top:5px;">Interés Anual: ${(loan.interestRate * 100).toFixed(2)}%</div>
                                             </div>
                                             `;
                             }).join('')
@@ -3125,43 +3442,74 @@
                     btnReq.addEventListener('click', () => {
                         const amount = parseFloat(amountIn.value);
                         const years = parseInt(yearsIn.value);
-                        if (!amount || amount <= 0) return alert("Introduce una cantidad válida.");
+                        if (!amount || amount <= 0) return UI.showModal('Error', 'Introduce una cantidad válida.', [{ text: 'Cerrar', style: 'secondary', fn: null }]);
 
                         const res = BankModule.takeLoan(amount, years);
-                        alert(res.message);
                         if (res.success) {
+                            UI.showModal('Solicitud Aprobada', res.message, [{ text: 'Excelente', style: 'success', fn: null }]);
                             UI.updateHeader();
                             UI.updateDashboard(); // Reflow cash
                             UI.updateBank(BankModule);
+                        } else {
+                            UI.showModal('Solicitud Denegada', res.message, [{ text: 'Entendido', style: 'danger', fn: null }]);
                         }
                     });
 
-                    container.querySelectorAll('.btn-pay-all-dynamic').forEach(btn => {
-                        btn.addEventListener('click', (e) => {
-                            const id = e.target.dataset.id;
-                            if (confirm('¿Pagar todo el préstamo restante?')) {
-                                const res = BankModule.payLoanTotally(id); // Ensure this method allows passing ID or check logic
-                                // Actually Bank module might need strict ID matching.
-                                // Let's assume payLoanTotally logic handles string/number conversion if needed.
-                                // Wait, Bank.payLoanTotally iterates loans. ID is timestamp (number).
-                                // dataset is string. Need parseInt.
-
-                                // Small inline logic fix:
-                            }
-                        });
-                    });
-
-                    // Re-bind properly with ID parsing because dataset is always string
-                    container.querySelectorAll('.btn-pay-all-dynamic').forEach(btn => {
+                    container.querySelectorAll('.btn-pay-loan').forEach(btn => {
                         btn.onclick = (e) => {
                             const id = parseInt(e.target.dataset.id); // Parse ID!
                             const res = BankModule.payLoanTotally(id);
-                            alert(res.message);
+
                             if (res.success) {
+                                UI.showModal('Deuda Liquidada', res.message, [{ text: 'Perfecto', style: 'success', fn: null }]);
                                 UI.updateHeader();
                                 UI.updateDashboard();
                                 UI.updateBank(BankModule);
+                            } else {
+                                UI.showModal('Error', res.message, [{ text: 'Cerrar', style: 'secondary', fn: null }]);
                             }
+                        };
+                    });
+
+                    container.querySelectorAll('.btn-pay-partial').forEach(btn => {
+                        btn.onclick = (e) => {
+                            const loanId = parseInt(e.target.dataset.id);
+
+                            const modalContent = `
+                                <p style="margin-bottom:10px;">Introduce la cantidad a amortizar:</p>
+                                <input type="number" id="amortize-input-${loanId}" placeholder="Ej: 5000" style="width:100%; padding:10px; border-radius:4px; border:1px solid #334155; background:#1e293b; color:white;">
+                            `;
+
+                            UI.showModal('Amortizar Préstamo', modalContent, [
+                                {
+                                    text: 'Confirmar Pago',
+                                    style: 'primary',
+                                    fn: () => {
+                                        const input = document.getElementById(`amortize-input-${loanId}`);
+                                        if (!input) return;
+                                        const val = parseInt(input.value);
+
+                                        if (isNaN(val) || val <= 0) {
+                                            // Small delay to show error after modal closes, or just alert? 
+                                            // Alert is safer here to not break flow if modal closes. 
+                                            // Actually re-opening modal is better but complex.
+                                            alert("Cantidad inválida.");
+                                            return;
+                                        }
+
+                                        const res = BankModule.payLoanPartial(loanId, val);
+                                        if (res.success) {
+                                            UI.showModal('Amortización Exitosa', res.message, [{ text: 'Genial', style: 'success', fn: null }]);
+                                            UI.updateBank(BankModule);
+                                            UI.updateHeader();
+                                            UI.updateDashboard();
+                                        } else {
+                                            UI.showModal('Error', res.message, [{ text: 'Cerrar', style: 'secondary', fn: null }]);
+                                        }
+                                    }
+                                },
+                                { text: 'Cancelar', style: 'secondary', fn: null }
+                            ]);
                         };
                     });
                 },
@@ -3254,7 +3602,7 @@
                                             </div>
                                             <div style="margin-top:15px; display:flex; gap:10px;">
                                                 <button class="btn-buy-prop-dynamic btn-action-primary" data-id="${prop.id}" data-mortgage="true">Comprar (Hipoteca)</button>
-                                                <button class="btn-buy-prop-dynamic btn-action-primary" data-id="${prop.id}" data-mortgage="false" style="background:#0f172a; border:1px solid #334155;">Contado</button>
+                                                <button class="btn-buy-prop-dynamic btn-action-primary" data-id="${prop.id}" data-mortgage="false" style="background:#475569; border:1px solid #94a3b8;">Contado</button>
                                             </div>
                                         </div>
                                     </div>
@@ -3303,27 +3651,58 @@
                             if (!prop) return;
 
                             const useMortgage = e.target.dataset.mortgage === 'true';
-                            const downPayment = prop.price * prop.downPaymentPct;
 
-                            let confirmMsg = `¿Adquirir ${prop.name}?\n\nPrecio: ${formatCurrency(prop.price)}\n`;
                             if (useMortgage) {
-                                confirmMsg += `Entrada (20%): ${formatCurrency(downPayment)}\nEl resto se financiará con hipoteca.`;
+                                const downPayment = prop.price * prop.downPaymentPct;
+                                const loanAmount = prop.price - downPayment;
+                                const rateAnnual = Bank.INTEREST_RATES.mortgage;
+                                const r = rateAnnual / 12;
+
+                                // Options
+                                const calcPmt = (years) => {
+                                    const n = years * 12;
+                                    return (loanAmount * r) / (1 - Math.pow(1 + r, -n));
+                                };
+
+                                const msg = `
+                                    <div style="margin-bottom:15px; border-bottom:1px solid #334155; padding-bottom:10px;">
+                                        <strong>${prop.name}</strong><br>
+                                        Precio: ${formatCurrency(prop.price)}<br>
+                                        Entrada (20%): <span style="color:#facc15">${formatCurrency(downPayment)}</span><br>
+                                        Préstamo: ${formatCurrency(loanAmount)}<br>
+                                        Interés Anual: <span style="color:#f87171">${(rateAnnual * 100).toFixed(2)}%</span>
+                                    </div>
+                                    <p style="margin-bottom:5px; font-size:0.9rem; color:#94a3b8;">Elige el plazo:</p>
+                                `;
+
+                                UI.showModal('Configurar Hipoteca', msg, [
+                                    { text: `10 Años (${formatCurrency(calcPmt(10))}/mes)`, style: 'primary', fn: () => buy(id, true, 10) },
+                                    { text: `20 Años (${formatCurrency(calcPmt(20))}/mes)`, style: 'primary', fn: () => buy(id, true, 20) },
+                                    { text: `30 Años (${formatCurrency(calcPmt(30))}/mes)`, style: 'primary', fn: () => buy(id, true, 30) },
+                                    { text: 'Cancelar', style: 'secondary', fn: null }
+                                ]);
+
                             } else {
-                                confirmMsg += `Pago al contado: ${formatCurrency(prop.price)}`;
+                                // Cash Buy
+                                const confirmMsg = `¿Adquirir ${prop.name} por ${formatCurrency(prop.price)} al contado?`;
+                                UI.confirmModal('Pago al Contado', confirmMsg, () => {
+                                    buy(id, false, 0);
+                                });
                             }
 
-                            UI.confirmModal('Comprar Propiedad', confirmMsg, () => {
-                                const res = REModule.buyProperty(id, useMortgage);
+                            // Helper execution
+                            const buy = (propId, mortgage, term) => {
+                                const res = REModule.buyProperty(propId, mortgage, term);
                                 if (res.success) {
-                                    UI.showModal('¡Compra Exitosa!', res.message, [{ text: 'Genial', style: 'primary', fn: null }]);
+                                    UI.showModal('¡Operación Exitosa!', res.message, [{ text: 'Genial', style: 'primary', fn: null }]);
                                     UI.updateHeader();
                                     UI.updateDashboard();
-                                    UI.updateBank(Bank); // Update loans
+                                    UI.updateBank(Bank);
                                     UI.updateRealEstate(REModule);
                                 } else {
                                     UI.showModal('Error', res.message, [{ text: 'Cerrar', style: 'secondary', fn: null }]);
                                 }
-                            });
+                            };
                         };
                     });
 
@@ -3416,14 +3795,22 @@
                         if (!name) return alert('Ponle un nombre a tu empresa.');
                         if (!selectedType) return alert('Selecciona un tipo de negocio.');
 
-                        step1.classList.remove('active');
-                        step2.classList.add('active');
+                        // Tutorial: Location Differences
+                        UI.runTutorialSequence([
+                            {
+                                title: '📍 Ubicación',
+                                msg: 'Ahora elige dónde está tu oficina. <strong>Afueras</strong> es barato pero con poco tráfico. <strong>Financiero</strong> es caro pero atrae a clientes ricos.'
+                            }
+                        ], () => {
+                            step1.classList.remove('active');
+                            step2.classList.add('active');
 
-                        // Update Progress
-                        document.getElementById('step-dot-1').textContent = '✓';
-                        document.getElementById('step-dot-2').classList.add('active');
+                            // Update Progress
+                            document.getElementById('step-dot-1').textContent = '✓';
+                            document.getElementById('step-dot-2').classList.add('active');
 
-                        updateTotal();
+                            updateTotal();
+                        });
                     };
 
                     document.getElementById('btn-wiz-back-2').onclick = () => {
@@ -3446,12 +3833,36 @@
                             UI.updateHeader();
                             UI.updateJob(JobSystem);
                             UI.updateDashboard();
+                            setTimeout(() => {
+                                // UI.startCompanyTutorial(); // Removed generic one
+                                UI.checkContextualTutorial('company_summary'); // Trigger Summary Tutorial first
+                            }, 500);
                         }
                     };
 
                     modal.style.display = 'block';
                     close.onclick = () => modal.style.display = 'none';
                     window.onclick = (e) => { if (e.target == modal) modal.style.display = 'none'; }
+
+                    // Tutorial: Business Types
+                    setTimeout(() => {
+                        UI.runTutorialSequence([
+                            {
+                                title: '🏢 Tipos de Empresa',
+                                msg: 'Cada negocio tiene costes y demandas diferentes.<br>• <strong>Startup</strong>: Barata pero arriesgada.<br>• <strong>Consultora</strong>: Altos beneficios por cliente.<br>• <strong>Retail</strong>: Mucho volumen, poco margen.'
+                            }
+                        ]);
+                    }, 300);
+                },
+
+                closeCompanyWizard() {
+                    document.getElementById('company-wizard-modal').style.display = 'none';
+                },
+
+                // Modified to call Company Tutorial upon success
+                finishCompanyWizard() {
+                    // Logic moved here or kept in event listener?
+                    // I'll leave the event listener logic but invoke tutorial there.
                 },
 
                 render() {
@@ -3478,42 +3889,133 @@
                             else if (targetView === 'job') UI.updateJob(JobSystem);
                             else if (targetView === 'education') UI.updateEducation(EducationModule);
                             else if (targetView === 'dashboard') UI.updateDashboard();
+
+                            // TRIGGER CONTEXTUAL TUTORIAL
+                            UI.checkContextualTutorial(targetView);
                         }
                     });
                 },
 
                 // TUTORIAL MODULE
-                startTutorial() {
+                startInitialTutorial() {
                     const steps = [
                         {
                             title: '👋 Bienvenido/a',
-                            msg: `Hola <strong>${GameState.playerName}</strong>. Tu objetivo es alcanzar la libertad financiera.<br><br>Empiezas con 10.000€ y un trabajo básico.`
+                            msg: `Hola <strong>${GameState.playerName}</strong>. Tu objetivo es la libertad financiera.<br><br>Empiezas con 10.000€.`
                         },
                         {
-                            title: '💰 Tu Estado',
-                            msg: 'Arriba a la derecha verás tu <strong>Dinero</strong> actual. ¡No te quedes a cero!'
-                        },
-                        {
-                            title: '🗓️ Avanzar Tiempo',
-                            msg: 'El botón CENTRAL es el más importante: <strong>Siguiente Mes</strong>. Al pulsarlo cobrarás tu sueldo, pagarás gastos y tus inversiones crecerán (o bajarán).'
-                        },
-                        {
-                            title: '💼 Primeros Pasos',
-                            msg: 'Te recomiendo ir a la pestaña <strong>TRABAJO</strong> y solicitar un ascenso o buscar mejores empleos para aumentar tus ingresos.'
-                        },
-                        {
-                            title: '🏠 Inversión',
-                            msg: 'Cuando ahorres, visita la <strong>BOLSA</strong> o <strong>INMUEBLES</strong> para poner tu dinero a trabajar.'
+                            title: '💰 Primer Paso',
+                            msg: 'Arriba a la derecha ves tu Dinero. No lo gastes todo.<br><br>Ve a la pestaña <strong>FORMACIÓN</strong> para empezar tu carrera.'
                         }
                     ];
+                    UI.runTutorialSequence(steps, () => {
+                        GameState.tutorialState.initial = true;
+                        PersistenceModule.saveGame();
+                    });
+                },
 
+                checkContextualTutorial(view) {
+                    if (!GameState.tutorialState) GameState.tutorialState = {}; // Safety init for old saves
+                    if (GameState.tutorialState[view]) return; // Already seen
+
+                    let steps = [];
+                    if (view === 'education') {
+                        steps = [
+                            { title: '🎓 Formación', msg: 'Aquí inviertes en ti mismo. Los cursos duran tiempo y cuestan dinero, pero te permiten acceder a mejores trabajos.' },
+                            { title: '💡 Consejo', msg: 'Matricúlate en algo que puedas pagar. Cuando termines, ve a la pestaña <strong>TRABAJO</strong> para pedir un ascenso.' }
+                        ];
+                    } else if (view === 'job') {
+                        if (GameState.jobTitle === 'Desempleado' || GameState.salary === 0) {
+                            steps = [
+                                { title: '⚠️ Desempleado', msg: 'No tienes ingresos pero tus gastos siguen corriendo. ¡Busca un trabajo urgentemente!' },
+                                { title: '💼 Primeros Pasos', msg: 'Revisa las ofertas disponibles abajo y solicita un puesto para empezar a ganar dinero.' }
+                            ];
+                        } else {
+                            steps = [
+                                { title: '💼 Trabajo', msg: 'Aquí gestionas tu carrera profesional. Ganas experiencia mes a mes.' },
+                                { title: '🚀 Ascensos', msg: 'Cuando cumplas los requisitos, solicita un ascenso para aumentar tus ingresos.' }
+                            ];
+                        }
+                    } else if (view === 'market') {
+                        steps = [
+                            { title: '📈 La Bolsa', msg: 'Compra barato, vende caro. Las acciones cambian de precio cada mes según la tendencia del mercado.' },
+                            { title: '⚠️ Riesgo', msg: 'Puedes ganar mucho o perderlo todo. Diversifica tu cartera.' }
+                        ];
+                    } else if (view === 'real-estate') {
+                        steps = [
+                            { title: '🏡 Inmobiliaria', msg: 'Los inmuebles dan rentas mensuales (alquiler) y se revalorizan con el tiempo.' },
+                            { title: '🏦 Hipotecas', msg: 'Puedes comprar dando solo el 20% de entrada y pidiendo una hipoteca al banco. ¡Apalancamiento!' }
+                        ];
+                    } else if (view === 'bank') {
+                        steps = [
+                            { title: '🏦 Banco', msg: 'Aquí gestiones tu deuda. Puedes pedir préstamos personales si necesitas efectivo urgente (pero intereses altos).' },
+                            { title: '📉 Amortizar', msg: 'Si tienes deudas, intenta pagarlas cuanto antes para reducir los intereses mensuales.' }
+                        ];
+                    } else if (view === 'company_summary') {
+                        steps = [
+                            { title: '📊 Resumen Empresa', msg: 'Tu cuadro de mando. Vigila la <strong>Caja</strong> (efectivo disponible) y el <strong>Beneficio Mensual</strong>.' },
+                            { title: '💡 Automatizar', msg: 'Aquí podrás contratar gerentes para que la empresa funcione sola en el futuro. Después, visita la pestaña <strong>Finanzas</strong> para asignarte un sueldo.' }
+                        ];
+                    } else if (view === 'company_product') {
+                        steps = [
+                            { title: '📦 Producto', msg: 'Define la calidad y el precio. Si subes mucho el precio sin calidad, los clientes se irán.' },
+                            { title: '🧠 I+D', msg: 'Invierte en mejorar el producto para poder cobrar más.' }
+                        ];
+                    } else if (view === 'company_marketing') {
+                        steps = [
+                            { title: '📢 Marketing', msg: 'Sin publicidad no hay ventas. Elige los canales donde están tus clientes.' },
+                            { title: '💰 Presupuesto', msg: 'Empieza con poco presupuesto y auméntalo cuando tengas beneficios.' }
+                        ];
+                    } else if (view === 'company_marketing') {
+                        steps = [
+                            { title: '📢 Marketing', msg: 'Sin publicidad no hay ventas. Elige los canales donde están tus clientes.' },
+                            { title: '💰 Presupuesto', msg: 'Empieza con poco presupuesto y auméntalo cuando tengas beneficios.' }
+                        ];
+                    } else if (view === 'company_staff') {
+                        steps = [
+                            { title: '👥 Personal', msg: 'Tus empleados determinan la eficiencia y calidad. Contrata con cuidado.' },
+                            { title: '⚡ Productividad', msg: 'Despide a los vagos y mantén a los talentos. Un buen equipo vale oro.' }
+                        ];
+                    } else if (view === 'company_finance') {
+                        steps = [
+                            { title: '📉 Finanzas', msg: 'Aquí verás el desglose de tus ingresos y gastos. Úsalo para detectar fugas de dinero.' },
+                            { title: '💰 Salario CEO', msg: '¡No trabajes gratis! Asígnate un sueldo mensual en el panel de abajo para recibir ingresos personales.' }
+                        ];
+                    }
+
+                    if (steps.length > 0) {
+                        GameState.tutorialState[view] = true;
+                        PersistenceModule.saveGame();
+                        setTimeout(() => UI.runTutorialSequence(steps), 500);
+                    }
+                },
+
+                startCompanyTutorial() {
+                    if (!GameState.tutorialState) GameState.tutorialState = {};
+                    if (GameState.tutorialState.company) return;
+
+                    const steps = [
+                        { title: '🏢 Eres el Jefe', msg: 'Has fundado tu empresa. Ahora tú controlas el Precio, el Marketing y la Calidad.' },
+                        { title: '⚙️ Gestión', msg: 'Usa las pestañas <strong>Producto</strong> y <strong>Marketing</strong> para atraer clientes. Si el precio es alto y la calidad baja, no venderás nada.' },
+                        { title: '💵 Finanzas', msg: '¡Cuidado con la caja! Si te quedas sin efectivo, quebrarás. Retira beneficios solo cuando la empresa sea estable.' }
+                    ];
+
+                    GameState.tutorialState.company = true;
+                    PersistenceModule.saveGame();
+                    UI.runTutorialSequence(steps);
+                },
+
+                runTutorialSequence(steps, onComplete) {
                     let currentStep = 0;
                     const showStep = () => {
-                        if (currentStep >= steps.length) return;
+                        if (currentStep >= steps.length) {
+                            if (onComplete) onComplete();
+                            return;
+                        }
                         const s = steps[currentStep];
                         UI.showModal(s.title, `<p>${s.msg}</p>`, [
                             {
-                                text: currentStep === steps.length - 1 ? '¡Vamos!' : 'Siguiente',
+                                text: currentStep === steps.length - 1 ? 'Entendido' : 'Siguiente',
                                 style: 'primary',
                                 fn: () => {
                                     currentStep++;
@@ -3682,34 +4184,35 @@
                     ]);
                 },
 
-                updateJob(JobSys) {
-                    const jobContainer = document.getElementById('job-view');
-                    if (!jobContainer) return;
-                    jobContainer.innerHTML = '';
-                    const contentContainer = document.createElement('div');
+                updateJob(JobSys = JobSystem) {
+                    try {
+                        const jobContainer = document.getElementById('job-view');
+                        if (!jobContainer) return;
+                        jobContainer.innerHTML = '';
+                        const contentContainer = document.createElement('div');
 
-                    if (GameState.company) {
-                        contentContainer.className = 'company-dashboard-full-view';
-                        contentContainer.style.display = 'block';
-                    } else {
-                        contentContainer.className = 'dashboard-container';
-                    }
-                    jobContainer.appendChild(contentContainer);
+                        if (GameState.company) {
+                            contentContainer.className = 'company-dashboard-full-view';
+                            contentContainer.style.display = 'block';
+                        } else {
+                            contentContainer.className = 'dashboard-container';
+                        }
+                        jobContainer.appendChild(contentContainer);
 
-                    // --- SHARED: HOLDING LIST (MANAGED COMPANIES) ---
-                    // Always show if we own passive companies, regardless of active job/company
-                    if (GameState.ownedCompanies && GameState.ownedCompanies.length > 0) {
-                        const holdingSection = document.createElement('div');
-                        holdingSection.className = 'dashboard-card full-width mb-30';
-                        holdingSection.innerHTML = `<h3 style="color:#facc15; margin-bottom:15px; display:flex; align-items:center; gap:10px;">👑 Holding Empresarial</h3>`;
-                        const holdingList = document.createElement('div');
-                        holdingList.style.display = 'grid';
-                        holdingList.style.gap = '10px';
+                        // --- SHARED: HOLDING LIST (MANAGED COMPANIES) ---
+                        // Always show if we own passive companies, regardless of active job/company
+                        if (GameState.ownedCompanies && GameState.ownedCompanies.length > 0) {
+                            const holdingSection = document.createElement('div');
+                            holdingSection.className = 'dashboard-card full-width mb-30';
+                            holdingSection.innerHTML = `<h3 style="color:#facc15; margin-bottom:15px; display:flex; align-items:center; gap:10px;">👑 Holding Empresarial</h3>`;
+                            const holdingList = document.createElement('div');
+                            holdingList.style.display = 'grid';
+                            holdingList.style.gap = '10px';
 
-                        GameState.ownedCompanies.forEach((co, idx) => {
-                            const div = document.createElement('div');
-                            div.className = 'holding-item-row';
-                            div.innerHTML = `
+                            GameState.ownedCompanies.forEach((co, idx) => {
+                                const div = document.createElement('div');
+                                div.className = 'holding-item-row';
+                                div.innerHTML = `
                             <div class="holding-info">
                                 <span class="co-name">${co.name}</span>
                                 <span class="co-details">${co.typeName} | ${co.locationName}</span>
@@ -3719,44 +4222,44 @@
                                 <button class="btn-sell-passive" data-idx="${idx}">VENDER</button>
                             </div>
                         `;
-                            div.querySelector('.btn-sell-passive').onclick = () => {
-                                UI.confirmModal('Vender Empresa', `¿Seguro que quieres vender ${co.name}?\n\nValoración: 5x Beneficio anual.`, () => {
-                                    const res = CompanyModule.sellPassiveCompany(idx);
-                                    if (res && res.success) {
-                                        // Update UI
-                                        UI.updateJob(JobSys);
-                                        UI.updateDashboard();
-                                        alert(res.message);
-                                    }
-                                });
-                            };
-                            holdingList.appendChild(div);
-                        });
-                        holdingSection.appendChild(holdingList);
-                        contentContainer.appendChild(holdingSection);
-                    }
-
-                    if (!GameState.company) {
-                        // --- PROFESSIONAL DASHBOARD MODE ---
-
-                        // 2. Dashboard Top Grid (Hero + Goal)
-                        const dashboardGrid = document.createElement('div');
-                        dashboardGrid.className = 'dashboard-grid mb-30';
-
-                        // --- CARD 1: CURRENT POSITION (HERO) ---
-                        const heroCard = document.createElement('div');
-                        heroCard.className = 'dashboard-card hero-card';
-
-                        // Experience Progress Logic
-                        const nextJob = JobSys.getAvailablePromotions();
-                        let expPercent = 0;
-                        let expText = "Nivel Máximo";
-                        if (nextJob) {
-                            expPercent = Math.min(100, (JobSys.monthsInCurrentJob / nextJob.reqMonths) * 100);
-                            expText = `${JobSys.monthsInCurrentJob.toFixed(1)} / ${nextJob.reqMonths} meses`;
+                                div.querySelector('.btn-sell-passive').onclick = () => {
+                                    UI.confirmModal('Vender Empresa', `¿Seguro que quieres vender ${co.name}?\n\nValoración: 5x Beneficio anual.`, () => {
+                                        const res = CompanyModule.sellPassiveCompany(idx);
+                                        if (res && res.success) {
+                                            // Update UI
+                                            UI.updateJob(JobSys);
+                                            UI.updateDashboard();
+                                            alert(res.message);
+                                        }
+                                    });
+                                };
+                                holdingList.appendChild(div);
+                            });
+                            holdingSection.appendChild(holdingList);
+                            contentContainer.appendChild(holdingSection);
                         }
 
-                        heroCard.innerHTML = `
+                        if (!GameState.company) {
+                            // --- PROFESSIONAL DASHBOARD MODE ---
+
+                            // 2. Dashboard Top Grid (Hero + Goal)
+                            const dashboardGrid = document.createElement('div');
+                            dashboardGrid.className = 'dashboard-grid mb-30';
+
+                            // --- CARD 1: CURRENT POSITION (HERO) ---
+                            const heroCard = document.createElement('div');
+                            heroCard.className = 'dashboard-card hero-card';
+
+                            // Experience Progress Logic
+                            const nextJob = JobSys.getAvailablePromotions();
+                            let expPercent = 0;
+                            let expText = "Nivel Máximo";
+                            if (nextJob) {
+                                expPercent = Math.min(100, (JobSys.monthsInCurrentJob / nextJob.reqMonths) * 100);
+                                expText = `${JobSys.monthsInCurrentJob.toFixed(1)} / ${nextJob.reqMonths} meses`;
+                            }
+
+                            heroCard.innerHTML = `
                         <div class="card-header">
                             <span class="badge-primary">PUESTO ACTUAL</span>
                             <span class="salary-badge">${formatCurrency(GameState.salary)}/mes</span>
@@ -3774,84 +4277,184 @@
                             </div>
                         </div>
                     `;
-                        dashboardGrid.appendChild(heroCard);
+                            dashboardGrid.appendChild(heroCard);
 
-                        // --- CARD 2: NEXT GOAL (TARGET) ---
-                        const goalCard = document.createElement('div');
-                        goalCard.className = 'dashboard-card goal-card';
+                            // Promotion / Raise Logic
+                            const path = JobSys.getCareerPath(JobSys.currentCareerPath);
+                            const currentJobIndex = (path && path.length > 0) ? path.findIndex(job => job.title === GameState.jobTitle) : -1;
+                            const isMaxLevel = (currentJobIndex !== -1 && currentJobIndex === path.length - 1);
 
-                        if (nextJob) {
-                            const isEduOk = !nextJob.reqEdu || JobSys.checkEducation(nextJob.reqEdu);
-                            const isExpOk = JobSys.monthsInCurrentJob >= nextJob.reqMonths;
-
-                            goalCard.innerHTML = `
-                            <div class="card-header">
-                                <span class="badge-secondary">SIGUIENTE OBJETIVO</span>
-                                <span class="salary-future">${formatCurrency(nextJob.salary)}</span>
-                            </div>
-                            <h3 class="goal-title">${nextJob.title}</h3>
-                            
-                            <div class="requirements-list">
-                                <div class="req-item ${isExpOk ? 'req-met' : 'req-unmet'}">
-                                    <span class="req-icon">${isExpOk ? '✅' : '⏳'}</span>
-                                    <span>Experiencia: ${nextJob.reqMonths} meses</span>
-                                </div>
-                                <div class="req-item ${isEduOk ? 'req-met' : 'req-unmet'}">
-                                    <span class="req-icon">${isEduOk ? '✅' : '📚'}</span>
-                                    <span>Formación: ${nextJob.reqEdu || 'Ninguna'}</span>
-                                </div>
-                            </div>
-
-                            <button id="btn-promote-dashboard" class="btn-action-primary" ${isExpOk && isEduOk ? '' : 'disabled'}>
-                                ${isExpOk && isEduOk ? 'SOLICITAR ASCENSO' : 'REQUISITOS PENDIENTES'}
-                            </button>
+                            if (JobSys.currentCareerPath === 'none' || !path) {
+                                // --- UNEMPLOYED CASE ---
+                                const goalCard = document.createElement('div');
+                                goalCard.className = 'dashboard-card goal-card';
+                                goalCard.innerHTML = `
+                            <div class="card-header"><span class="badge-secondary">BUSCA TRABAJO</span></div>
+                            <h3 class="goal-title">Estás Desempleado</h3>
+                            <p style="color:#94a3b8; margin-top:10px;">Revisa las ofertas de abajo y aplica a un puesto para empezar a ganar dinero.</p>
                         `;
+                                dashboardGrid.appendChild(goalCard);
 
-                            // Handler
-                            const btn = goalCard.querySelector('#btn-promote-dashboard');
-                            if (!btn.disabled) {
-                                btn.onclick = () => {
-                                    const res = JobSys.promote();
-                                    if (res.success) {
-                                        UI.showModal('¡ENHORABUENA!', res.message, [{ text: 'Celebrar', style: 'success', fn: () => UI.updateJob(JobSys) }]);
-                                    }
-                                };
+                            } else if (!isMaxLevel) {
+                                // --- PROMOTION CASE ---
+                                const nextJobInPath = path[currentJobIndex + 1];
+                                const canPromote = JobSys.getAvailablePromotions() !== null;
+
+                                const reqMonths = nextJobInPath.reqMonths;
+                                const currentMonths = JobSys.monthsInCurrentJob;
+                                const progress = Math.min(100, (currentMonths / reqMonths) * 100);
+
+                                const isEduOk = !nextJobInPath.reqEdu || JobSys.checkEducation(nextJobInPath.reqEdu);
+                                const isTimeOk = currentMonths >= reqMonths;
+
+                                const nextCard = document.createElement('div');
+                                nextCard.className = 'job-promo-card';
+                                nextCard.innerHTML = `
+                                <div class="job-promo-header">
+                                    <div class="job-promo-title">
+                                        <span>🚀 Siguiente Ascenso: ${nextJobInPath.title}</span>
+                                    </div>
+                                    <div class="job-promo-salary">+${formatCurrency(nextJobInPath.salary - GameState.salary)}/mes</div>
+                                </div>
+                                
+                                <div style="margin-bottom:20px;">
+                                    <div style="display:flex; justify-content:space-between; font-size:0.85rem; color:#cbd5e1; margin-bottom:5px;">
+                                        <span>Experiencia Requerida</span>
+                                        <span>${Math.floor(currentMonths)} / ${reqMonths} meses</span>
+                                    </div>
+                                    <div class="edu-bar-bg"><div class="edu-bar-fill" style="width:${progress}%"></div></div>
+                                </div>
+
+                                <div style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
+                                    <span class="req-tag ${isTimeOk ? 'success' : 'fail'}">
+                                        ${isTimeOk ? '✓' : '⏳'} Experiencia
+                                    </span>
+                                    ${nextJobInPath.reqEdu ? `
+                                        <span class="req-tag ${isEduOk ? 'success' : 'fail'}">
+                                            ${isEduOk ? '✓' : '❌'} ${nextJobInPath.reqEdu}
+                                        </span>
+                                    ` : ''}
+                                </div>
+
+                                <button id="btn-promote" class="btn-primary" ${canPromote && isEduOk ? '' : 'disabled'}>
+                                    Solicitar Ascenso
+                                </button>
+                            `;
+                                if (canPromote && isEduOk) {
+                                    nextCard.querySelector('#btn-promote').onclick = () => {
+                                        const res = JobSys.promote();
+                                        if (res.success) {
+                                            UI.showModal('¡Ascenso Conseguido!', res.message, [{ text: 'Celebrar', style: 'success', fn: () => UI.updateJob(JobSys) }]);
+                                            UI.updateHeader();
+                                            UI.updateDashboard();
+                                        } else {
+                                            alert(res.message);
+                                        }
+                                    };
+                                }
+                                dashboardGrid.appendChild(nextCard);
+
+                            } else {
+                                // --- MAX LEVEL CASE (RAISE SYSTEM) ---
+                                const monthsSince = JobSys.monthsSinceLastRaise || 0;
+                                const canRaise = monthsSince >= 12;
+                                const waittime = 12 - monthsSince;
+
+                                const raiseCard = document.createElement('div');
+                                raiseCard.className = 'job-peak-card';
+                                raiseCard.innerHTML = `
+                                <div class="job-peak-content">
+                                    <h3>👑 Cima Profesional</h3>
+                                    <p style="color:#cbd5e1; font-size:0.95rem;">Has alcanzado el máximo nivel.</p>
+                                    <div style="margin-top:10px;">
+                                        <span class="req-tag ${canRaise ? 'success' : 'fail'}">
+                                            ${canRaise ? '✓ Disponible' : '⏳ Cooldown: ' + Math.ceil(waittime) + ' meses'}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <button id="btn-request-raise" class="btn-gold" ${canRaise ? '' : 'disabled'}>
+                                        ${canRaise ? 'Solicitar Aumento' : 'Revisión Salarial'}
+                                    </button>
+                                </div>
+                            `;
+
+                                if (canRaise) {
+                                    raiseCard.querySelector('#btn-request-raise').onclick = () => {
+                                        const res = JobSys.requestRaise();
+                                        UI.showModal('Respuesta del Jefe', res.message, [{
+                                            text: 'Continuar', style: 'primary', fn: () => {
+                                                UI.updateJob(JobSys);
+                                                UI.updateHeader();
+                                                UI.updateDashboard();
+                                            }
+                                        }]);
+                                    };
+                                }
+                                dashboardGrid.appendChild(raiseCard);
                             }
+                            contentContainer.appendChild(dashboardGrid);
 
-                        } else {
-                            goalCard.innerHTML = `
-                            <div class="card-header"><span class="badge-secondary">CIMA ALCANZADA</span></div>
-                            <h3 class="goal-title">¡Eres una leyenda!</h3>
-                            <p style="color:#94a3b8; margin-top:10px;">Has llegado al máximo nivel en esta profesión.</p>
-                        `;
-                        }
-                        dashboardGrid.appendChild(goalCard);
-                        contentContainer.appendChild(dashboardGrid);
+                            // 3. Job Market (Grid)
+                            const marketSection = document.createElement('div');
+                            marketSection.className = 'market-section';
+                            marketSection.innerHTML = `<h3 class="section-title">🌐 Mercado Laboral</h3>`;
 
-                        // 3. Job Market (Grid)
-                        const marketSection = document.createElement('div');
-                        marketSection.className = 'market-section';
-                        marketSection.innerHTML = `<h3 class="section-title">🌐 Mercado Laboral</h3>`;
+                            const marketGrid = document.createElement('div');
+                            marketGrid.className = 'market-grid';
 
-                        const marketGrid = document.createElement('div');
-                        marketGrid.className = 'market-grid';
+                            // Path Name Mapping
+                            const pathMap = {
+                                'unskilled': 'Sin Titulación',
+                                'admin_contable': 'Administración y Finanzas',
+                                'gestor_cobros': 'Gestión de Cobros',
+                                'admin_inmo': 'Gestión Inmobiliaria',
+                                'prog_apps': 'Desarrollo de Apps',
+                                'sys_support': 'Soporte y Sistemas',
+                                'mobile_dev': 'Desarrollo Móvil',
+                                'maint_ind': 'Mantenimiento Industrial',
+                                'clima': 'Climatización y Frío',
+                                'buildings': 'Mantenimiento de Edificios',
+                                'analyst_fin': 'Análisis Financiero',
+                                'consultant': 'Consultoría de Negocio',
+                                'sales_b2b': 'Ventas B2B',
+                                'swe': 'Ingeniería de Software',
+                                'data': 'Data & Analytics',
+                                'devops': 'Cloud & DevOps',
+                                'ing_obra': 'Ingeniería de Obra',
+                                'oficina_tecnica': 'Oficina Técnica',
+                                'urbz_consult': 'Urbanismo y Consultoría'
+                            };
 
-                        const vacancies = JobSys.getAllVacancies();
-                        vacancies.forEach(vac => {
-                            const card = document.createElement('div');
-                            card.className = 'market-card';
+                            const vacancyList = JobSys.getAllVacancies().filter(vac => vac.reqMonths === 0);
 
-                            const reqText = `${vac.reqMonths || 0}m Exp`;
-                            const eduText = vac.reqEdu ? `${vac.reqEdu}` : null;
+                            const eligible = [];
+                            const locked = [];
 
-                            card.innerHTML = `
+                            vacancyList.forEach(vac => {
+                                if (!vac.reqEdu || JobSys.checkEducation(vac.reqEdu)) {
+                                    eligible.push(vac);
+                                } else {
+                                    locked.push(vac);
+                                }
+                            });
+
+                            // 1. RENDER ELIGIBLE
+                            eligible.forEach(vac => {
+                                const card = document.createElement('div');
+                                card.className = 'market-card';
+
+                                const eduText = vac.reqEdu ? `${vac.reqEdu}` : null;
+                                const pathName = pathMap[vac.path] || vac.path;
+
+                                card.innerHTML = `
                             <div class="market-card-top">
                                 <h4>${vac.title}</h4>
-                                <span class="market-path">${vac.path}</span>
+                                <span class="market-path">${pathName}</span>
                             </div>
                             <div class="market-tags">
-                                <span class="tag">${reqText}</span>
-                                ${eduText ? `<span class="tag tag-edu">${eduText}</span>` : ''}
+                                <span class="tag">Nivel Inicial</span>
+                                ${eduText ? `<span class="tag tag-edu" style="background:transparent; border:1px solid #94a3b8; color:#cbd5e1;">${eduText}</span>` : ''}
                             </div>
                             <div class="market-footer">
                                 <div class="market-salary">${formatCurrency(vac.salary)}</div>
@@ -3859,23 +4462,85 @@
                             </div>
                         `;
 
-                            card.querySelector('.btn-apply-small').onclick = () => {
-                                const res = JobSys.applyToJob(vac.title);
-                                if (res.success) {
-                                    UI.showModal('Nuevo Puesto', res.message, [{ text: 'Aceptar', style: 'success', fn: () => UI.updateJob(JobSys) }]);
-                                } else {
-                                    UI.showModal('Rechazado', res.message);
-                                }
-                            };
-                            marketGrid.appendChild(card);
-                        });
-                        marketSection.appendChild(marketGrid);
-                        contentContainer.appendChild(marketSection);
+                                card.querySelector('.btn-apply-small').onclick = () => {
+                                    const res = JobSys.applyToJob(vac.title);
+                                    if (res.success) {
+                                        // First Job Success Modal
+                                        let welcomeMsg = `Has sido contratado como <strong>${vac.title}</strong>.<br><br>
+                                    Salario: ${formatCurrency(vac.salary)}/mes.`;
 
-                        // 4. Entrepreneur Footer
-                        const entrepreneurSection = document.createElement('div');
-                        entrepreneurSection.className = 'entrepreneur-footer';
-                        entrepreneurSection.innerHTML = `
+                                        if (!GameState.tutorialState.job || vac.title.includes('Reponedor')) {
+                                            welcomeMsg += `<br><br>🔴 <strong>IMPORTANTE:</strong> El tiempo en este juego avanza por meses. Pulsa el botón <strong>"Siguiente Mes"</strong> (arriba a la derecha) para cobrar tu nómina y avanzar.`;
+                                            GameState.tutorialState.job = true;
+                                        }
+
+                                        UI.showModal('¡Contratado!', welcomeMsg, [{ text: '¡A trabajar!', style: 'success', fn: () => UI.updateJob(JobSys) }]);
+
+                                        UI.updateHeader();
+                                        UI.updateDashboard();
+                                    } else {
+                                        UI.showModal('Solicitud Rechazada', res.message, [{ text: 'Vaya...', style: 'secondary', fn: null }]);
+                                    }
+                                };
+                                marketGrid.appendChild(card);
+                            });
+                            marketSection.appendChild(marketGrid);
+
+                            // 2. RENDER LOCKED (Collapsible)
+                            if (locked.length > 0) {
+                                const details = document.createElement('details');
+                                details.style.marginTop = '30px';
+                                details.style.marginBottom = '20px';
+                                details.style.borderTop = '1px solid #334155';
+                                details.style.paddingTop = '20px';
+
+                                const summary = document.createElement('summary');
+                                summary.textContent = `📚 Ver otras oportunidades (${locked.length} requieren formación)`;
+                                summary.style.cursor = 'pointer';
+                                summary.style.color = '#94a3b8';
+                                summary.style.marginBottom = '15px';
+                                details.appendChild(summary);
+
+                                const lockedGrid = document.createElement('div');
+                                lockedGrid.className = 'market-grid'; // Reuse styles
+                                lockedGrid.style.opacity = '0.7';
+
+                                locked.forEach(vac => {
+                                    const card = document.createElement('div');
+                                    card.className = 'market-card';
+                                    // Slight style diff for locked
+                                    card.style.borderColor = '#475569';
+
+                                    const eduText = vac.reqEdu ? `${vac.reqEdu}` : null;
+                                    const pathName = pathMap[vac.path] || vac.path;
+
+                                    card.innerHTML = `
+                                <div class="market-card-top">
+                                    <h4 style="color:#cbd5e1">${vac.title}</h4>
+                                    <span class="market-path">${pathName}</span>
+                                </div>
+                                <div class="market-tags">
+                                    <span class="tag">Nivel Inicial</span>
+                                    ${eduText ? `<span class="tag tag-edu" style="background:transparent; border:1px solid #ef4444; color:#ef4444;">Req: ${eduText}</span>` : ''}
+                                </div>
+                                <div class="market-footer">
+                                    <div class="market-salary">${formatCurrency(vac.salary)}</div>
+                                    <button class="btn-apply-small" disabled style="background:#475569; opacity:0.5; cursor:not-allowed;">Falta Título</button>
+                                </div>
+                            `;
+                                    lockedGrid.appendChild(card);
+                                });
+
+                                details.appendChild(lockedGrid);
+                                marketSection.appendChild(details);
+                            }
+
+                            contentContainer.appendChild(marketSection);
+
+                            // 4. Entrepreneur Footer
+                            const entrepreneurSection = document.createElement('div');
+                            entrepreneurSection.className = 'entrepreneur-footer';
+                            entrepreneurSection.innerHTML = `
                         <div class="entrepreneur-content">
                             <div class="entrepreneur-text">
                                 <h3>🚀 ¿Listo para dar el gran salto?</h3>
@@ -3884,16 +4549,16 @@
                             <button id="btn-found-company" class="btn-entrepreneur">FUNDAR EMPRESA</button>
                         </div>
                     `;
-                        entrepreneurSection.querySelector('#btn-found-company').onclick = () => UI.openCompanyWizard();
-                        contentContainer.appendChild(entrepreneurSection);
-                    } else {
-                        // --- COMPANY OWNER MODE ---
-                        const co = GameState.company;
+                            entrepreneurSection.querySelector('#btn-found-company').onclick = () => UI.openCompanyWizard();
+                            contentContainer.appendChild(entrepreneurSection);
+                        } else {
+                            // --- COMPANY OWNER MODE ---
+                            const co = GameState.company;
 
-                        // Persistent Tabs
-                        const activeTab = jobContainer.dataset.activeTab || 'summary';
+                            // Persistent Tabs
+                            const activeTab = jobContainer.dataset.activeTab || 'summary';
 
-                        contentContainer.innerHTML = `
+                            contentContainer.innerHTML = `
                         <div class="company-dashboard">
                             <div class="company-header">
                                 <div>
@@ -3921,75 +4586,77 @@
                         </div>
                     `;
 
-                        // Tab Switching Logic
-                        contentContainer.querySelectorAll('.tab-btn').forEach(btn => {
-                            btn.onclick = () => {
-                                jobContainer.dataset.activeTab = btn.dataset.tab;
-                                UI.updateJob(JobSystem);
-                            };
-                        });
-
-                        document.getElementById('btn-automate').onclick = () => {
-                            const cost = Math.max(30000, (co.profitLastMonth || 0) * 3);
-                            UI.confirmModal('Contratar Gerente', `Coste: ${formatCurrency(cost)}\n\n⚠️ Tu empresa pasará a ser PASIVA.\nPerderás el control manual.\n¿Deseas automatizarla?`, () => {
-                                const r = CompanyModule.hireManager();
-                                if (r) {
-                                    UI.showModal(r.success ? '¡Éxito!' : 'Error', r.message, [
-                                        {
-                                            text: 'Aceptar', style: 'primary', fn: () => {
-                                                if (r.success) { UI.updateJob(JobSystem); UI.updateHeader(); UI.updateDashboard(); }
-                                            }
-                                        }
-                                    ]);
-                                }
-                            });
-                        };
-
-
-                        const tabContent = document.getElementById('co-tab-content');
-
-                        if (activeTab === 'summary') {
-                            try {
-                                let eventsHtml = co.events.map(e => `<li>${e}</li>`).join('');
-                                if (!eventsHtml) eventsHtml = '<li style="color:#aaa">Sin novedades este mes.</li>';
-
-                                // Safe access to history for percent diff
-                                let revDiff = 0;
-                                let expDiff = 0;
-                                let profDiff = 0;
-
-                                if (co.financialHistory && co.financialHistory.length >= 2) {
-                                    const curr = co.financialHistory[co.financialHistory.length - 1];
-                                    const prev = co.financialHistory[co.financialHistory.length - 2];
-
-                                    if (curr && prev) {
-                                        if (prev.revenue > 0) revDiff = (curr.revenue - prev.revenue) / prev.revenue;
-                                    }
-                                }
-
-                                // Get latest expense details
-                                let details = { wages: 0, rent: 0, cogs: 0, marketing: 0, opex: 0, salary: 0 };
-                                let income = { revenue: co.revenueLastMonth }; // Add more income sources if/when available
-
-                                if (co.financialHistory && co.financialHistory.length > 0) {
-                                    const lastEntry = co.financialHistory[co.financialHistory.length - 1];
-                                    if (lastEntry.expenses) {
-                                        details = { ...details, ...lastEntry.expenses };
-                                    }
-                                }
-
-                                const fmtDiff = (val) => {
-                                    const s = val > 0 ? '+' : '';
-                                    const color = val > 0 ? '#4ade80' : (val < 0 ? '#f87171' : '#94a3b8');
-                                    return `<span style="color:${color}; font-size:0.8rem; margin-left:5px;">(${s}${(val * 100).toFixed(1)}%)</span>`;
+                            // Tab Switching Logic
+                            contentContainer.querySelectorAll('.tab-btn').forEach(btn => {
+                                btn.onclick = () => {
+                                    jobContainer.dataset.activeTab = btn.dataset.tab;
+                                    UI.updateJob(JobSystem);
+                                    UI.checkContextualTutorial('company_' + btn.dataset.tab);
                                 };
+                            });
 
-                                tabContent.innerHTML = `
+                            document.getElementById('btn-automate').onclick = () => {
+                                const cost = Math.max(30000, (co.profitLastMonth || 0) * 3);
+                                UI.confirmModal('Contratar Gerente', `Coste: ${formatCurrency(cost)}\n\n⚠️ Tu empresa pasará a ser PASIVA.\nPerderás el control manual.\n¿Deseas automatizarla?`, () => {
+                                    const r = CompanyModule.hireManager();
+                                    if (r) {
+                                        UI.showModal(r.success ? '¡Éxito!' : 'Error', r.message, [
+                                            {
+                                                text: 'Aceptar', style: 'primary', fn: () => {
+                                                    if (r.success) { UI.updateJob(JobSystem); UI.updateHeader(); UI.updateDashboard(); }
+                                                }
+                                            }
+                                        ]);
+                                    }
+                                });
+                            };
+
+
+                            const tabContent = document.getElementById('co-tab-content');
+
+                            if (activeTab === 'summary') {
+                                try {
+                                    let eventsHtml = co.events.map(e => `<li>${e}</li>`).join('');
+                                    if (!eventsHtml) eventsHtml = '<li style="color:#aaa">Sin novedades este mes.</li>';
+
+                                    // Safe access to history for percent diff
+                                    let revDiff = 0;
+                                    let expDiff = 0;
+                                    let profDiff = 0;
+
+                                    if (co.financialHistory && co.financialHistory.length >= 2) {
+                                        const curr = co.financialHistory[co.financialHistory.length - 1];
+                                        const prev = co.financialHistory[co.financialHistory.length - 2];
+
+                                        if (curr && prev) {
+                                            if (prev.revenue > 0) revDiff = (curr.revenue - prev.revenue) / prev.revenue;
+                                        }
+                                    }
+
+                                    // Get latest expense details
+                                    let details = { wages: 0, rent: 0, cogs: 0, marketing: 0, opex: 0, salary: 0 };
+                                    let income = { revenue: co.revenueLastMonth }; // Add more income sources if/when available
+
+                                    if (co.financialHistory && co.financialHistory.length > 0) {
+                                        const lastEntry = co.financialHistory[co.financialHistory.length - 1];
+                                        if (lastEntry.expenses) {
+                                            details = { ...details, ...lastEntry.expenses };
+                                        }
+                                    }
+
+                                    const fmtDiff = (val) => {
+                                        const s = val > 0 ? '+' : '';
+                                        const color = val > 0 ? '#4ade80' : (val < 0 ? '#f87171' : '#94a3b8');
+                                        return `<span style="color:${color}; font-size:0.8rem; margin-left:5px;">(${s}${(val * 100).toFixed(1)}%)</span>`;
+                                    };
+
+                                    tabContent.innerHTML = `
                                 <div class="summary-grid">
                                     <div class="card kpi-card">
                                         <h3>Estado General</h3>
                                         <p>Reputación: <strong>${co.reputation.toFixed(1)}/5.0</strong></p>
                                         <p>Clientes: ${co.lastStats ? co.lastStats.customers : 0} / mes</p>
+                                        <p style="font-size:0.8rem; color:#94a3b8">Capacidad: <strong>${co.lastStats ? co.lastStats.capacity : 0}</strong> / mes</p>
                                         <div style="margin-top:10px; border-top:1px solid #334155; padding-top:5px;">
                                             <p>Ingresos: ${formatCurrency(co.revenueLastMonth)} ${fmtDiff(revDiff)}</p>
                                             <p>Gastos: ${formatCurrency(co.expensesLastMonth)} ${fmtDiff(expDiff)}</p>
@@ -4028,63 +4695,63 @@
                                 </div>
                             `;
 
-                                // Render Chart
-                                if (co.revenueHistory && co.revenueHistory.length > 0) {
-                                    const ctx = document.getElementById('revenueChart').getContext('2d');
+                                    // Render Chart
+                                    if (co.revenueHistory && co.revenueHistory.length > 0) {
+                                        const ctx = document.getElementById('revenueChart').getContext('2d');
 
-                                    // Slice last 12
-                                    const labels = Array.from({ length: co.revenueHistory.length }, (_, i) => i + 1).slice(-12);
-                                    const revData = co.revenueHistory.slice(-12);
-                                    const profData = co.profitHistory.slice(-12);
-                                    const expData = co.financialHistory ? co.financialHistory.slice(-12).map(h => h.expenses ? h.expenses.total : 0) : [];
+                                        // Slice last 12
+                                        const labels = Array.from({ length: co.revenueHistory.length }, (_, i) => i + 1).slice(-12);
+                                        const revData = co.revenueHistory.slice(-12);
+                                        const profData = co.profitHistory.slice(-12);
+                                        const expData = co.financialHistory ? co.financialHistory.slice(-12).map(h => h.expenses ? h.expenses.total : 0) : [];
 
-                                    new Chart(ctx, {
-                                        type: 'line',
-                                        data: {
-                                            labels: labels,
-                                            datasets: [
-                                                { label: 'Ingresos', data: revData, borderColor: '#4ade80', tension: 0.2, pointRadius: 2 },
-                                                { label: 'Gastos', data: expData, borderColor: '#f87171', tension: 0.2, pointRadius: 2 },
-                                                { label: 'Beneficio', data: profData, borderColor: '#38bdf8', tension: 0.2, pointRadius: 2 }
-                                            ]
-                                        },
-                                        options: {
-                                            responsive: true,
-                                            maintainAspectRatio: false,
-                                            plugins: { legend: { display: true, labels: { boxWidth: 10, font: { size: 10 } } } },
-                                            scales: {
-                                                y: { grid: { color: '#334155' }, ticks: { font: { size: 9 } } },
-                                                x: { display: false }
+                                        new Chart(ctx, {
+                                            type: 'line',
+                                            data: {
+                                                labels: labels,
+                                                datasets: [
+                                                    { label: 'Ingresos', data: revData, borderColor: '#4ade80', tension: 0.2, pointRadius: 2 },
+                                                    { label: 'Gastos', data: expData, borderColor: '#f87171', tension: 0.2, pointRadius: 2 },
+                                                    { label: 'Beneficio', data: profData, borderColor: '#38bdf8', tension: 0.2, pointRadius: 2 }
+                                                ]
+                                            },
+                                            options: {
+                                                responsive: true,
+                                                maintainAspectRatio: false,
+                                                plugins: { legend: { display: true, labels: { boxWidth: 10, font: { size: 10 } } } },
+                                                scales: {
+                                                    y: { grid: { color: '#334155' }, ticks: { font: { size: 9 } } },
+                                                    x: { display: false }
+                                                }
                                             }
-                                        }
-                                    });
+                                        });
+                                    }
+                                } catch (err) {
+                                    console.error("Summary Render Error", err);
+                                    tabContent.innerHTML = `<div class="error-box">ERROR RENDERING SUMMARY: ${err.message}</div>`;
                                 }
-                            } catch (err) {
-                                console.error("Summary Render Error", err);
-                                tabContent.innerHTML = `<div class="error-box">ERROR RENDERING SUMMARY: ${err.message}</div>`;
-                            }
 
-                        } else if (activeTab === 'staff') {
-                            let staffHtml = '';
+                            } else if (activeTab === 'staff') {
+                                let staffHtml = '';
 
-                            // Calculate Office Cost
-                            let upgradeCost = 0;
-                            let upgradeText = "Ampliar Oficina";
-                            let upgradeDisabled = "";
+                                // Calculate Office Cost
+                                let upgradeCost = 0;
+                                let upgradeText = "Ampliar Oficina";
+                                let upgradeDisabled = "";
 
-                            if (co.maxStaff === 5) upgradeCost = Math.max(15000, (co.profitLastMonth || 0) * 3);
-                            else if (co.maxStaff === 10) upgradeCost = Math.max(30000, (co.profitLastMonth || 0) * 3);
-                            else {
-                                upgradeText = "Máximo Alcanzado";
-                                upgradeDisabled = "disabled style='opacity:0.5; cursor:not-allowed;'";
-                            }
+                                if (co.maxStaff === 5) upgradeCost = Math.max(15000, (co.profitLastMonth || 0) * 3);
+                                else if (co.maxStaff === 10) upgradeCost = Math.max(30000, (co.profitLastMonth || 0) * 3);
+                                else {
+                                    upgradeText = "Máximo Alcanzado";
+                                    upgradeDisabled = "disabled style='opacity:0.5; cursor:not-allowed;'";
+                                }
 
-                            if (!upgradeDisabled) {
-                                upgradeText += ` (${formatCurrency(upgradeCost)})`;
-                            }
+                                if (!upgradeDisabled) {
+                                    upgradeText += ` (${formatCurrency(upgradeCost)})`;
+                                }
 
-                            co.staff.forEach((emp, i) => {
-                                staffHtml += `
+                                co.staff.forEach((emp, i) => {
+                                    staffHtml += `
                                 <div class="staff-row">
                                     <div>
                                         <strong>${emp.role}</strong><br>
@@ -4099,9 +4766,9 @@
                                     </div>
                                 </div>
                             `;
-                            });
+                                });
 
-                            tabContent.innerHTML = `
+                                tabContent.innerHTML = `
                             <div class="staff-section">
                                 <div class="staff-header">
                                     <h3>Plantilla (${co.staff.length} / ${co.maxStaff})</h3>
@@ -4120,59 +4787,59 @@
                             </div>
                         `;
 
-                            document.getElementById('btn-upgrade-office').onclick = () => {
-                                const r = CompanyModule.upgradeOffice();
-                                if (r) { alert(r.message); UI.updateJob(JobSystem); }
-                            };
+                                document.getElementById('btn-upgrade-office').onclick = () => {
+                                    const r = CompanyModule.upgradeOffice();
+                                    if (r) { alert(r.message); UI.updateJob(JobSystem); }
+                                };
 
-                            // Global handlers for inline onclicks (hacky but works for this structure)
-                            window.hireRole = (role, sal) => {
-                                const skill = role === 'Experto' ? 0.8 : 0.4;
-                                const r = CompanyModule.hireStaff(role, sal, skill);
-                                if (r) { if (!r.success) alert(r.message); UI.updateJob(JobSystem); }
-                            };
-                            window.fireEmployee = (i) => {
-                                if (confirm('¿Despedir empleado? Baja moral del equipo.')) {
-                                    CompanyModule.fireStaff(i);
-                                    UI.updateJob(JobSystem);
+                                // Global handlers for inline onclicks (hacky but works for this structure)
+                                window.hireRole = (role, sal) => {
+                                    const skill = role === 'Experto' ? 0.8 : 0.4;
+                                    const r = CompanyModule.hireStaff(role, sal, skill);
+                                    if (r) { if (!r.success) alert(r.message); UI.updateJob(JobSystem); }
+                                };
+                                window.fireEmployee = (i) => {
+                                    if (confirm('¿Despedir empleado? Baja moral del equipo.')) {
+                                        CompanyModule.fireStaff(i);
+                                        UI.updateJob(JobSystem);
+                                    }
+                                };
+                                window.toggleAutoWage = (i) => {
+                                    if (GameState.company.staff[i]) GameState.company.staff[i].autoWage = !GameState.company.staff[i].autoWage;
                                 }
-                            };
-                            window.toggleAutoWage = (i) => {
-                                if (GameState.company.staff[i]) GameState.company.staff[i].autoWage = !GameState.company.staff[i].autoWage;
-                            }
 
-                        } else if (activeTab === 'product') {
-                            // PRODUCT TAB
-                            const baseTicket = CompanyModule.businessTypes[co.typeId].baseTicket;
-                            const currentPrice = co.customPrice || baseTicket;
+                            } else if (activeTab === 'product') {
+                                // PRODUCT TAB
+                                const baseTicket = CompanyModule.businessTypes[co.typeId].baseTicket;
+                                const currentPrice = co.customPrice || baseTicket;
 
-                            // Calculate Equilibrium Price
-                            const curProv = CompanyModule.providers[co.providerId];
-                            const curActualQ = curProv.quality + ((co.productLevel - 1) * 0.05);
-                            // Solve for Rep Change = 0 => TargetRep = CurrentRep
-                            // TargetRep = 3.5 + (Gap * 5) => Gap = (CurrentRep - 3.5) / 5
-                            const neededGap = (co.reputation - 3.5) / 5;
-                            // Gap = Actual - Required => Required = Actual - Gap
-                            const maxRequired = curActualQ - neededGap;
-                            // Required = 0.7 + (Pct * 2) => Pct = (Required - 0.7) / 2
-                            const allowedPct = (maxRequired - 0.7) / 2;
-                            const equiPrice = baseTicket * (1 + allowedPct);
+                                // Calculate Equilibrium Price
+                                const curProv = CompanyModule.providers[co.providerId];
+                                const curActualQ = curProv.quality + ((co.productLevel - 1) * 0.05);
+                                // Solve for Rep Change = 0 => TargetRep = CurrentRep
+                                // TargetRep = 3.5 + (Gap * 5) => Gap = (CurrentRep - 3.5) / 5
+                                const neededGap = (co.reputation - 3.5) / 5;
+                                // Gap = Actual - Required => Required = Actual - Gap
+                                const maxRequired = curActualQ - neededGap;
+                                // Required = 0.7 + (Pct * 2) => Pct = (Required - 0.7) / 2
+                                const allowedPct = (maxRequired - 0.7) / 2;
+                                const equiPrice = baseTicket * (1 + allowedPct);
 
-                            // Analysis
-                            const stats = co.lastStats || { actualQuality: 0, requiredQuality: 0, targetRep: 3, repGrowth: 0 };
-                            const qGap = stats.actualQuality - stats.requiredQuality;
-                            const qColor = qGap >= 0 ? '#4ade80' : '#f87171';
-                            const qText = qGap >= 0 ? 'Excelente (Sube Reputación)' : 'Insuficiente (Baja Reputación)';
+                                // Analysis
+                                const stats = co.lastStats || { actualQuality: 0, requiredQuality: 0, targetRep: 3, repGrowth: 0 };
+                                const qGap = stats.actualQuality - stats.requiredQuality;
+                                const qColor = qGap >= 0 ? '#4ade80' : '#f87171';
+                                const qText = qGap >= 0 ? 'Excelente (Sube Reputación)' : 'Insuficiente (Baja Reputación)';
 
-                            let provOpts = '';
-                            for (const [k, v] of Object.entries(CompanyModule.providers)) {
-                                const isSel = co.providerId === k;
-                                provOpts += `<div class="selection-card ${isSel ? 'selected' : ''}" onclick="setStrat('provider', '${k}')">
+                                let provOpts = '';
+                                for (const [k, v] of Object.entries(CompanyModule.providers)) {
+                                    const isSel = co.providerId === k;
+                                    provOpts += `<div class="selection-card ${isSel ? 'selected' : ''}" onclick="setStrat('provider', '${k}')">
                                 <strong>${v.name}</strong><br>Coste: x${v.priceMod}<br>Calidad: ${(v.quality * 100).toFixed(0)}%
                             </div>`;
-                            }
+                                }
 
-                            tabContent.innerHTML = `
+                                tabContent.innerHTML = `
                             <div class="strategy-section">
                                 <!-- Pricing & Analysis -->
                                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:25px;">
@@ -4227,23 +4894,23 @@
                             </div>
                         `;
 
-                            // Handlers need to be re-attached or global
-                            window.attachProductHandlers(); // Helper I will define
+                                // Handlers need to be re-attached or global
+                                window.attachProductHandlers(); // Helper I will define
 
-                        } else if (activeTab === 'marketing') {
-                            // MARKETING TAB
-                            const stats = co.lastStats || {};
-                            const comp = stats.demandComposition || { base: 0, traffic: 1, marketing: 1, reputation: 1, organic: 1 };
+                            } else if (activeTab === 'marketing') {
+                                // MARKETING TAB
+                                const stats = co.lastStats || {};
+                                const comp = stats.demandComposition || { base: 0, traffic: 1, marketing: 1, reputation: 1, organic: 1 };
 
-                            let mktOpts = '';
-                            for (const [k, v] of Object.entries(CompanyModule.marketingChannels)) {
-                                const isSel = co.marketingChannel === k;
-                                mktOpts += `<div class="selection-card ${isSel ? 'selected' : ''}" onclick="setStrat('marketing', '${k}')">
+                                let mktOpts = '';
+                                for (const [k, v] of Object.entries(CompanyModule.marketingChannels)) {
+                                    const isSel = co.marketingChannel === k;
+                                    mktOpts += `<div class="selection-card ${isSel ? 'selected' : ''}" onclick="setStrat('marketing', '${k}')">
                                 <strong>${v.name}</strong><br>Coste: ${formatCurrency(v.cost)}/mes<br>Impacto: x${v.impact}
                             </div>`;
-                            }
+                                }
 
-                            tabContent.innerHTML = `
+                                tabContent.innerHTML = `
                             <div class="strategy-section">
                                 <h3 style="border-bottom:1px solid #334155; padding-bottom:5px; margin-bottom:15px;">📡 Canales de Publicidad</h3>
                                 <div class="options-grid" style="margin-bottom:20px;">${mktOpts}</div>
@@ -4273,29 +4940,29 @@
                                 </div>
                             </div>
                         `;
-                        }
-
-                        // Re-attach global handlers just in case (doing it outside blocks is cleaner)
-                        window.setStrat = (cat, val) => {
-                            CompanyModule.setStrategicOption(cat, val);
-                            UI.updateJob(JobSystem);
-                        };
-                        window.investCo = (type) => {
-                            const r = CompanyModule.invest(type);
-                            if (r) { alert(r.message); UI.updateJob(JobSystem); }
-                        }
-                        window.updatePrice = () => {
-                            const val = parseFloat(document.getElementById('price-input').value);
-                            if (val > 0) {
-                                GameState.company.customPrice = val;
-                                alert(`Precio fijado en ${formatCurrency(val)}. La exigencia de calidad cambiará.`);
-                                UI.updateJob(JobSystem);
                             }
-                        }
-                        window.attachProductHandlers = () => { }; // Placeholder if needed
 
-                        if (activeTab === 'finance') {
-                            tabContent.innerHTML = `
+                            // Re-attach global handlers just in case (doing it outside blocks is cleaner)
+                            window.setStrat = (cat, val) => {
+                                CompanyModule.setStrategicOption(cat, val);
+                                UI.updateJob(JobSystem);
+                            };
+                            window.investCo = (type) => {
+                                const r = CompanyModule.invest(type);
+                                if (r) { alert(r.message); UI.updateJob(JobSystem); }
+                            }
+                            window.updatePrice = () => {
+                                const val = parseFloat(document.getElementById('price-input').value);
+                                if (val > 0) {
+                                    GameState.company.customPrice = val;
+                                    alert(`Precio fijado en ${formatCurrency(val)}. La exigencia de calidad cambiará.`);
+                                    UI.updateJob(JobSystem);
+                                }
+                            }
+                            window.attachProductHandlers = () => { }; // Placeholder if needed
+
+                            if (activeTab === 'finance') {
+                                tabContent.innerHTML = `
                             <div class="finance-actions">
                                 <h3>Movimientos de Caja</h3>
                                 <div class="control-group">
@@ -4327,38 +4994,42 @@
                             </div>
                          `;
 
-                            document.getElementById('btn-withdraw').onclick = () => {
-                                const val = parseInt(document.getElementById('co-trans-amount').value);
-                                if (!val || val <= 0) return alert('Introduce cantidad válida');
-                                let r = CompanyModule.withdraw(val);
-                                if (r) alert(r.message);
-                                UI.updateJob(JobSystem);
-                                UI.updateHeader();
-                            };
-                            document.getElementById('btn-deposit').onclick = () => {
-                                const val = parseInt(document.getElementById('co-dep-amount').value);
-                                if (!val || val <= 0) return alert('Introduce cantidad válida');
-                                let r = CompanyModule.deposit(val);
-                                if (r) alert(r.message);
-                                UI.updateJob(JobSystem);
-                                UI.updateHeader();
-                            };
-                            document.getElementById('btn-set-salary').onclick = () => {
-                                const val = parseInt(document.getElementById('co-ceo-salary').value) || 0;
-                                co.ceoSalary = val;
-                                alert(`Salario de CEO actualizado a ${formatCurrency(val)}`);
-                                UI.updateJob(JobSystem);
-                            };
-                            window.sellCompanyAction = () => {
-                                const r = CompanyModule.sellCompany();
-                                if (r && r.success) {
-                                    alert(r.message);
-                                    UI.updateHeader();
+                                document.getElementById('btn-withdraw').onclick = () => {
+                                    const val = parseInt(document.getElementById('co-trans-amount').value);
+                                    if (!val || val <= 0) return alert('Introduce cantidad válida');
+                                    let r = CompanyModule.withdraw(val);
+                                    if (r) alert(r.message);
                                     UI.updateJob(JobSystem);
-                                    UI.updateDashboard();
-                                }
-                            };
+                                    UI.updateHeader();
+                                };
+                                document.getElementById('btn-deposit').onclick = () => {
+                                    const val = parseInt(document.getElementById('co-dep-amount').value);
+                                    if (!val || val <= 0) return alert('Introduce cantidad válida');
+                                    let r = CompanyModule.deposit(val);
+                                    if (r) alert(r.message);
+                                    UI.updateJob(JobSystem);
+                                    UI.updateHeader();
+                                };
+                                document.getElementById('btn-set-salary').onclick = () => {
+                                    const val = parseInt(document.getElementById('co-ceo-salary').value) || 0;
+                                    co.ceoSalary = val;
+                                    alert(`Salario de CEO actualizado a ${formatCurrency(val)}`);
+                                    UI.updateJob(JobSystem);
+                                };
+                                window.sellCompanyAction = () => {
+                                    const r = CompanyModule.sellCompany();
+                                    if (r && r.success) {
+                                        alert(r.message);
+                                        UI.updateHeader();
+                                        UI.updateJob(JobSystem);
+                                        UI.updateDashboard();
+                                    }
+                                };
+                            }
                         }
+                    } catch (e) {
+                        console.error("UI Error:", e);
+                        alert("UI Error: " + e.message);
                     }
                 }
             };
@@ -4820,7 +5491,7 @@
                                 const name = document.getElementById('start-player-name').value || 'Inversor';
                                 GameState.playerName = name;
                                 callback(); // initGame
-                                setTimeout(() => UI.startTutorial(), 500); // Start Tutorial
+                                setTimeout(() => UI.startInitialTutorial(), 500); // Start New Tutorial
                             }
                         }
                     ]);
