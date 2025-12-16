@@ -1032,6 +1032,37 @@
         .btn-sm:hover {
             background: #475569;
         }
+
+        /* MOBILE FIXES */
+        @media (max-width: 768px) {
+
+            /* Real Estate Stats Grid */
+            .re-stats-container {
+                display: grid !important;
+                grid-template-columns: 1fr 1fr !important;
+                gap: 10px !important;
+                flex-wrap: wrap !important;
+            }
+
+            .re-stat-card {
+                margin-bottom: 0 !important;
+                min-width: 0 !important;
+            }
+
+            /* Stock Detail Modal Sizing */
+            .modal-content {
+                width: 95% !important;
+                max-width: 95% !important;
+                padding: 15px !important;
+                margin: 10px auto !important;
+                max-height: 90vh !important;
+                overflow-y: auto !important;
+            }
+
+            #modal-stock-chart {
+                max-height: 250px !important;
+            }
+        }
     </style>
 </head>
 
@@ -3545,18 +3576,18 @@
                         </div>
 
                         <!-- HERO STATS -->
-                        <div class="portfolio-hero">
-                            <div class="portfolio-stat">
-                                <span class="label">Valor Cartera</span>
-                                <span class="value">${formatCurrency(totalVal)}</span>
+                        <div class="re-stats-container" style="display:flex; justify-content:space-between; gap:15px; margin-bottom:20px;">
+                            <div class="portfolio-stat re-stat-card" style="flex:1; background:#1e293b; padding:15px; border-radius:12px; border:1px solid #334155; text-align:center;">
+                                <span class="label" style="display:block; color:#94a3b8; font-size:0.85rem; margin-bottom:5px;">Valor Cartera</span>
+                                <span class="value" style="font-size:1.2rem; font-weight:bold; color:white;">${formatCurrency(totalVal)}</span>
                             </div>
-                            <div class="portfolio-stat">
-                                <span class="label">Patrimonio (Equity)</span>
-                                <span class="value">${formatCurrency(totalEquity)}</span>
+                            <div class="portfolio-stat re-stat-card" style="flex:1; background:#1e293b; padding:15px; border-radius:12px; border:1px solid #334155; text-align:center;">
+                                <span class="label" style="display:block; color:#94a3b8; font-size:0.85rem; margin-bottom:5px;">Patrimonio</span>
+                                <span class="value" style="font-size:1.2rem; font-weight:bold; color:#facc15;">${formatCurrency(totalEquity)}</span>
                             </div>
-                             <div class="portfolio-stat">
-                                <span class="label">Rentas / mes</span>
-                                <span class="value" style="color:#a7f3d0">+${formatCurrency(totalRent)}</span>
+                             <div class="portfolio-stat re-stat-card" style="flex:1; background:#1e293b; padding:15px; border-radius:12px; border:1px solid #334155; text-align:center;">
+                                <span class="label" style="display:block; color:#94a3b8; font-size:0.85rem; margin-bottom:5px;">Rentas / mes</span>
+                                <span class="value" style="font-size:1.2rem; font-weight:bold; color:#4ade80;">+${formatCurrency(totalRent)}</span>
                             </div>
                         </div>
 
