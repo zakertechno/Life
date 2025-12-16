@@ -1033,6 +1033,69 @@
             background: #475569;
         }
 
+        /* DASHBOARD REDESIGN */
+        .fin-health-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .fin-card {
+            background: #1e293b;
+            padding: 15px;
+            border-radius: 12px;
+            border: 1px solid #334155;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+
+        .fin-card:hover {
+            transform: translateY(-2px);
+            border-color: #4ade80;
+        }
+
+        .fin-label {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .fin-value {
+            font-size: 1.4rem;
+            font-weight: bold;
+            color: white;
+        }
+
+        /* MOBILE DASHBOARD */
+        @media (max-width: 768px) {
+            .fin-health-grid {
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 12px !important;
+            }
+
+            .fin-card {
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: center !important;
+                text-align: left !important;
+                padding: 18px !important;
+                margin-bottom: 0 !important;
+            }
+
+            .fin-label {
+                margin-bottom: 0 !important;
+                font-size: 0.95rem !important;
+            }
+
+            .fin-value {
+                font-size: 1.2rem !important;
+            }
+        }
+
         /* MOBILE FIXES */
         @media (max-width: 768px) {
 
@@ -1502,7 +1565,7 @@
                             labels: history.labels,
                             datasets: [
                                 {
-                                    label: 'Patrimonio Neto',
+                                    label: 'P/n',
                                     data: history.netWorth,
                                     borderColor: '#facc15',
                                     backgroundColor: gradientNW,
@@ -1561,7 +1624,10 @@
                                 },
                                 y: {
                                     grid: { color: '#334155' },
-                                    ticks: { color: '#94a3b8', callback: (val) => formatCurrency(val) }
+                                    ticks: {
+                                        color: '#94a3b8',
+                                        callback: (val) => formatCurrency(val, 0) // Force integer
+                                    }
                                 }
                             }
                         }
@@ -2999,10 +3065,8 @@
             /*******************************************************
              * UI
              *******************************************************/
-            const formatCurrency = (amount) => {
-                const opts = { style: 'currency', currency: 'EUR' };
-                if (Math.abs(amount) > 99999) opts.maximumFractionDigits = 0;
-                return new Intl.NumberFormat('es-ES', opts).format(amount);
+            const formatCurrency = (amount, decimals = 2) => {
+                return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(amount);
             };
             const formatPercent = (val) => (val * 100).toFixed(2) + '%';
 
@@ -3062,6 +3126,7 @@
                     let companyCount = (GameState.company ? 1 : 0) + (GameState.ownedCompanies ? GameState.ownedCompanies.length : 0);
                     // holdingIncome is already calculated above as sum of profits
 
+                    // DOM UPDATE
                     // DOM UPDATE
                     const container = document.getElementById('dashboard-view');
                     if (!container) return;
