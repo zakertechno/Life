@@ -38,6 +38,23 @@
             /* Disable double-tap zoom */
         }
 
+        @keyframes floatUpFade {
+            0% {
+                transform: translate(-50%, -50%) scale(0.8);
+                opacity: 0;
+            }
+
+            20% {
+                transform: translate(-50%, -80%) scale(1.2);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translate(-50%, -150%) scale(1);
+                opacity: 0;
+            }
+        }
+
         #app {
             max-width: 1200px;
             margin: 0 auto;
@@ -4385,6 +4402,61 @@
             },
 
 
+            playCoinSound() {
+                try {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioContext) return;
+
+                    const ctx = new AudioContext();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+
+                    // Coin "Ding" Effect
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(1200, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(2000, ctx.currentTime + 0.1);
+
+                    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.3);
+                } catch (e) {
+                    console.error('Audio play failed', e);
+                }
+            },
+
+            showTurnFeedback(netIncome) {
+                if (netIncome === 0) return;
+
+                const isPositive = netIncome > 0;
+                const text = isPositive ? `+${formatCurrency(netIncome)}` : formatCurrency(netIncome);
+                const color = isPositive ? '#4ade80' : '#f87171';
+
+                const el = document.createElement('div');
+                el.textContent = text;
+                el.style.position = 'fixed';
+                el.style.left = '50%';
+                el.style.top = '50%';
+                el.style.transform = 'translate(-50%, -50%)';
+                el.style.fontSize = '3rem';
+                el.style.fontWeight = 'bold';
+                el.style.color = color;
+                el.style.textShadow = '0 4px 10px rgba(0,0,0,0.5)';
+                el.style.pointerEvents = 'none';
+                el.style.zIndex = '9999';
+                el.style.animation = 'floatUpFade 1.5s ease-out forwards';
+
+                document.body.appendChild(el);
+
+                if (isPositive) this.playCoinSound();
+
+                setTimeout(() => el.remove(), 1500);
+            },
+
             updateLifestyle(LifeModule) {
                 const container = document.getElementById('lifestyle-view');
                 if (!container) return;
@@ -5871,7 +5943,12 @@
                 // but usually I can just getById if unique. 
                 // Found duplicate IDs in valid HTML check. I will queryAll by ID [id="next-turn-btn"]
                 document.querySelectorAll('[id="next-turn-btn"]').forEach(btn => {
-                    btn.onclick = () => nextTurn();
+                    btn.onclick = () => {
+                        const prevCash = GameState.cash;
+                        nextTurn();
+                        const diff = GameState.cash - prevCash;
+                        UI.showTurnFeedback(diff);
+                    };
                 });
 
                 // Stock Market
