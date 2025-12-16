@@ -4577,7 +4577,9 @@
                     #view-container { margin-bottom: 80px; }
 
                     /* Layout Stacks */
-                    .dashboard-grid, .bank-grid, .stats-grid, .market-hero, .prop-details-grid, .summary-kpi-row, .market-grid, .listings-grid, .course-grid { grid-template-columns: 1fr !important; }
+                    .dashboard-grid, .bank-grid, .stats-grid, .market-hero, .prop-details-grid, .summary-kpi-row, .market-grid, .listings-grid, .course-grid, .education-container, .job-market-list { grid-template-columns: 1fr !important; }
+                    .education-container { display: flex !important; flex-direction: column !important; }
+                    
                     .hero-card, .market-card, .property-card-expert, .course-card-new, .dashboard-card, .kpi-box, .stock-chip { margin-bottom: 10px; }
                     
                     /* Specific View Optimizations */
@@ -4586,22 +4588,25 @@
                     .market-hero { gap: 10px; padding: 15px !important; }
                     
                     /* Bank */
-                    .bank-container { display: flex; flex-direction: column; gap: 20px; }
+                    .bank-container { display: flex; flex-direction: column; gap: 20px; padding-bottom:20px; }
                     .loan-calculator { padding: 15px !important; }
                     
                     /* Real Estate */
-                    .re-container { display: flex; flex-direction: column; gap: 20px; }
-                    .property-card-expert { flex-direction: row; align-items: center; } /* Compact row for prop? No, column is better for details */
-                    .property-card-expert { flex-direction: column; } 
-                    .prop-img { height: 150px; }
+                    .re-container { display: flex; flex-direction: column; gap: 20px; padding-bottom:20px; }
+                    .property-card-expert { flex-direction: column !important; } 
+                    .prop-img { height: 180px; width: 100%; border-bottom: 1px solid #334155; border-right: none; }
+                    .prop-content { padding: 15px !important; }
                     
                     /* Job */
-                    .job-container { display: flex; flex-direction: column; gap: 20px; }
+                    .job-container { display: flex; flex-direction: column; gap: 15px; padding-bottom:20px; }
                     .job-card { padding: 15px !important; }
+                    .job-card h4 { font-size: 1.1rem !important; }
+                    .promotion-area { padding: 15px !important; }
                     
                     /* Education */
                     .edu-hero { flex-direction: column; text-align: center; padding: 20px !important; }
                     .edu-icon { margin-bottom: 10px; }
+                    .education-container { padding-bottom: 20px; }
 
                     /* Dashboard Compact */
                     .dashboard-card { padding: 15px !important; }
