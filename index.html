@@ -38,6 +38,23 @@
             /* Disable double-tap zoom */
         }
 
+        /* JUICY BUTTONS MICRO-INTERACTIONS */
+        button,
+        .nav-btn,
+        .b-nav-item,
+        .btn-action,
+        .btn-modal {
+            transition: transform 0.05s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        button:active,
+        .nav-btn:active,
+        .b-nav-item:active,
+        .btn-action:active,
+        .btn-modal:active {
+            transform: scale(0.95);
+        }
+
         @keyframes floatUpFade {
             0% {
                 transform: translate(-50%, -50%) scale(0.8);
@@ -3252,13 +3269,54 @@
             chartTimeframe: 24, // Default 2 years
             stockChartTimeframe: 24,
             currentOpenStock: null,
+            // State for animations
+            lastCash: 0,
+            lastNetWorth: 0,
+
+            animateValue(obj, start, end, duration) {
+                let startTimestamp = null;
+                const step = (timestamp) => {
+                    if (!startTimestamp) startTimestamp = timestamp;
+                    const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                    // Ease out quart
+                    const ease = 1 - Math.pow(1 - progress, 4);
+                    const current = Math.floor(progress * (end - start) + start);
+                    obj.textContent = formatCurrency(current);
+                    if (progress < 1) {
+                        window.requestAnimationFrame(step);
+                    } else {
+                        obj.textContent = formatCurrency(end);
+                    }
+                };
+                window.requestAnimationFrame(step);
+            },
+
             updateHeader() {
-                // Update Date
-                document.getElementById('date-display').textContent = `Mes: ${GameState.month} | Año: ${GameState.year}`;
+                const cashDisplay = document.getElementById('money-display'); // Changed from 'cash-display' to 'money-display' to match existing HTML
+                const netWorthDisplay = document.getElementById('net-worth-display'); // Assuming this element exists or will be added
 
-                // Update Money
-                document.getElementById('money-display').textContent = formatCurrency(GameState.cash);
+                // Animate Cash
+                if (cashDisplay) {
+                    // Only animate on change, else instant set (for init)
+                    if (this.lastCash !== GameState.cash) {
+                        this.animateValue(cashDisplay, this.lastCash, GameState.cash, 1000);
+                        this.lastCash = GameState.cash;
+                    } else {
+                        cashDisplay.textContent = formatCurrency(GameState.cash);
+                    }
+                }
 
+                // Animate Net Worth
+                if (netWorthDisplay) {
+                    if (this.lastNetWorth !== GameState.netWorth) {
+                        this.animateValue(netWorthDisplay, this.lastNetWorth, GameState.netWorth, 1000);
+                        this.lastNetWorth = GameState.netWorth;
+                    } else {
+                        netWorthDisplay.textContent = formatCurrency(GameState.netWorth);
+                    }
+                }
+
+                document.getElementById('date-display').textContent = `Mes: ${GameState.month} | Año: ${GameState.year}`; // Kept original date-display update
                 // Update Player Name
                 const pName = document.getElementById('header-player-name');
                 if (pName) {
@@ -4429,6 +4487,60 @@
                 }
             },
 
+            triggerConfetti() {
+                const canvas = document.createElement('canvas');
+                canvas.style.position = 'fixed';
+                canvas.style.top = '0';
+                canvas.style.left = '0';
+                canvas.style.width = '100%';
+                canvas.style.height = '100%';
+                canvas.style.pointerEvents = 'none';
+                canvas.style.zIndex = '99999';
+                document.body.appendChild(canvas);
+
+                const ctx = canvas.getContext('2d');
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+
+                const particles = [];
+                const colors = ['#f472b6', '#38bdf8', '#4ade80', '#facc15', '#fbbf24'];
+
+                for (let i = 0; i < 150; i++) {
+                    particles.push({
+                        x: window.innerWidth / 2,
+                        y: window.innerHeight / 2,
+                        vx: (Math.random() - 0.5) * 15,
+                        vy: (Math.random() - 1) * 15,
+                        size: Math.random() * 8 + 4,
+                        color: colors[Math.floor(Math.random() * colors.length)],
+                        life: 100
+                    });
+                }
+
+                function animate() {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    let active = false;
+
+                    particles.forEach(p => {
+                        if (p.life > 0) {
+                            p.x += p.vx;
+                            p.y += p.vy;
+                            p.vy += 0.5; // Gravity
+                            p.life--;
+                            active = true;
+
+                            ctx.fillStyle = p.color;
+                            ctx.fillRect(p.x, p.y, p.size, p.size);
+                        }
+                    });
+
+                    if (active) requestAnimationFrame(animate);
+                    else canvas.remove();
+                }
+
+                animate();
+            },
+
             showTurnFeedback(netIncome) {
                 if (netIncome === 0) return;
 
@@ -4455,6 +4567,30 @@
                 if (isPositive) this.playCoinSound();
 
                 setTimeout(() => el.remove(), 1500);
+            },
+
+            showToast(title, message, type = 'info') {
+                let container = document.getElementById('toast-container');
+                if (!container) {
+                    container = document.createElement('div');
+                    container.id = 'toast-container';
+                    document.body.appendChild(container); // Append gracefully
+                }
+
+                const toast = document.createElement('div');
+                toast.className = `toast-card ${type}`;
+                toast.innerHTML = `
+                    <strong>${title}</strong>
+                    <p>${message}</p>
+                `;
+
+                container.appendChild(toast);
+
+                // Auto Remove
+                setTimeout(() => {
+                    toast.style.animation = 'slideOutRight 0.3s ease-in forwards';
+                    setTimeout(() => toast.remove(), 300);
+                }, 3000);
             },
 
             updateLifestyle(LifeModule) {
@@ -5238,6 +5374,20 @@
                                     const profData = co.profitHistory.slice(-12);
                                     const expData = co.financialHistory ? co.financialHistory.slice(-12).map(h => h.expenses ? h.expenses.total : 0) : [];
 
+                                    // Assuming GameState is defined elsewhere and looks like this:
+                                    // const GameState = {
+                                    //     player: {},
+                                    //     company: null, // Will be initialized if player starts one
+                                    //     achievedMilestones: [], // Track confetti unlocks
+                                    //     history: {
+                                    //         netWorth: [],
+                                    //         cash: [],
+                                    //         debt: [],
+                                    //         assets: [],
+                                    //         labels: []
+                                    //     }
+                                    // };
+
                                     new Chart(ctx, {
                                         type: 'line',
                                         data: {
@@ -5597,6 +5747,20 @@
 
             // History & Chart
             const nw = updateNetWorth();
+
+            // GAMIFICATION: MILESTONE CONFETTI
+            const milestones = [5000, 50000, 100000, 500000, 1000000];
+            if (!GameState.achievedMilestones) GameState.achievedMilestones = []; // Safety init for old saves
+
+            milestones.forEach(m => {
+                if (nw >= m && !GameState.achievedMilestones.includes(m)) {
+                    GameState.achievedMilestones.push(m);
+                    UI.triggerConfetti();
+                    UI.showToast('¡HITO DESBLOQUEADO!', `Has alcanzado tus primeros ${formatCurrency(m)} de Patrimonio.`, 'success');
+                    // Add a small bonus? No, visual only for now.
+                }
+            });
+
             let totalDebt = 0;
             GameState.loans.forEach(l => totalDebt += l.remainingBalance);
             let assetsOnly = nw + totalDebt; // Roughly
