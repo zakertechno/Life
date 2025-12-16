@@ -3265,86 +3265,141 @@
                 openStockModal(stock) {
                     const portfolioItem = GameState.inventory.stocks.find(s => s.symbol === stock.symbol);
                     const owned = portfolioItem ? portfolioItem.quantity : 0;
-                    const avg = portfolioItem ? portfolioItem.avgPrice : 0;
+
+                    // NEW MOBILE-FIRST LAYOUT
+                    // We use a flex-column container that takes up the full modal height
+                    // content-header: Fixed
+                    // content-body: Scrollable (Chart + Stats)
+                    // content-footer: Fixed (Buttons)
 
                     const msg = `
-                 <div class="stock-modal-compact" style="margin-bottom:10px;">
-                     <!-- COMPACT HEADER -->
-                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                        <div style="font-weight:bold; color:#fff; font-size:1.1rem;">
-                            ${stock.name} <small style="color:#94a3b8">(${stock.symbol})</small>
+                    <div class="stock-ops-container" style="display:flex; flex-direction:column; height:80vh; max-height:80vh;">
+                        
+                        <!-- 1. HEADER (Fixed) -->
+                        <div class="ops-header" style="flex:0 0 auto; border-bottom:1px solid #334155; padding-bottom:10px; margin-bottom:10px;">
+                            <div style="display:flex; justify-content:space-between; align-items:start;">
+                                <div>
+                                    <h3 style="margin:0; font-size:1.3rem; color:white;">${stock.name}</h3>
+                                    <span style="color:#94a3b8; font-size:0.9rem;">${stock.symbol}</span>
+                                </div>
+                                <div style="text-align:right;">
+                                    <div style="font-size:1.4rem; font-weight:bold; color:${stock.trend >= 0 ? '#4ade80' : '#f87171'}">
+                                        ${formatCurrency(stock.price)}
+                                    </div>
+                                    <span style="font-size:0.85rem; color:${stock.trend >= 0 ? '#86efac' : '#fca5a5'}">
+                                        ${stock.trend >= 0 ? '▲' : '▼'} ${(Math.abs(stock.trend) * 100).toFixed(2)}%
+                                    </span>
+                                </div>
+                            </div>
                         </div>
-                        <div style="text-align:right;">
-                             <div style="font-size:1.2rem; color:${stock.trend >= 0 ? '#4ade80' : '#f87171'}">${formatCurrency(stock.price)}</div>
-                             <div style="font-size:0.75rem; color:#94a3b8;">${(stock.trend * 100).toFixed(2)}%</div>
+
+                        <!-- 2. BODY (Scrollable) -->
+                        <div class="ops-body" style="flex:1 1 auto; overflow-y:auto; min-height:0; padding-right:5px;">
+                            
+                            <!-- Chart Container -->
+                            <div style="background:#0f172a; border-radius:8px; padding:10px; margin-bottom:15px; position:relative;">
+                                <div style="height:180px; width:100%;">
+                                    <canvas id="stock-modal-chart"></canvas>
+                                </div>
+                                <div id="chart-overlay-info" style="position:absolute; top:10px; left:10px; background:rgba(0,0,0,0.5); padding:2px 6px; border-radius:4px; font-size:0.75rem; color:white; pointer-events:none;">
+                                    Rendimiento: <span id="chart-roi-display">--</span>
+                                </div>
+                            </div>
+
+                            <!-- Timeframe Selectors -->
+                            <div class="timeframe-segmented" style="display:flex; background:#1e293b; padding:4px; border-radius:8px; margin-bottom:20px;">
+                                <button class="btn-seg active" data-tf="24" onclick="UI.changeTimeframe(24)" style="flex:1; background:transparent; border:none; color:#cbd5e1; padding:6px; border-radius:6px;">2 Años</button>
+                                <button class="btn-seg" data-tf="6" onclick="UI.changeTimeframe(6)" style="flex:1; background:transparent; border:none; color:#cbd5e1; padding:6px; border-radius:6px;">6 Meses</button>
+                                <button class="btn-seg" data-tf="999" onclick="UI.changeTimeframe(999)" style="flex:1; background:transparent; border:none; color:#cbd5e1; padding:6px; border-radius:6px;">Todo</button>
+                            </div>
+
+                            <!-- User Portfolio Stats -->
+                            <div class="portfolio-strip" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:20px;">
+                                <div style="background:#1e293b; padding:10px; border-radius:8px; text-align:center;">
+                                    <span style="display:block; font-size:0.75rem; color:#94a3b8;">En Cartera</span>
+                                    <span style="font-size:1.1rem; color:white; font-weight:bold;">${owned}</span>
+                                </div>
+                                <div style="background:#1e293b; padding:10px; border-radius:8px; text-align:center;">
+                                    <span style="display:block; font-size:0.75rem; color:#94a3b8;">Valor Actual</span>
+                                    <span style="font-size:1.1rem; color:#facc15; font-weight:bold;">${formatCurrency(owned * stock.price)}</span>
+                                </div>
+                            </div>
+
                         </div>
-                     </div>
-                     
-                     <!-- COMPACT CHART -->
-                     <div class="stock-chart-container" style="height:120px; width:100%; margin-bottom:10px; background:#0f172a; border-radius:6px;">
-                        <canvas id="stock-modal-chart"></canvas>
-                     </div>
 
-                     <!-- TIMEFRAME BUTTONS -->
-                     <div style="display:flex; justify-content:center; gap:5px; margin-bottom:15px;">
-                        <button class="btn-filter ${UI.stockChartTimeframe === 6 ? 'active' : ''}" onclick="UI.stockChartTimeframe=6; UI.updateStockModalChart()">6M</button>
-                        <button class="btn-filter ${UI.stockChartTimeframe === 24 ? 'active' : ''}" onclick="UI.stockChartTimeframe=24; UI.updateStockModalChart()">2A</button>
-                        <button class="btn-filter ${UI.stockChartTimeframe === 999 ? 'active' : ''}" onclick="UI.stockChartTimeframe=999; UI.updateStockModalChart()">MAX</button>
-                     </div>
+                        <!-- 3. FOOTER (Fixed Actions) -->
+                        <div class="ops-footer" style="flex:0 0 auto; border-top:1px solid #334155; padding-top:15px; margin-top:10px;">
+                            <div style="margin-bottom:10px;">
+                                <input type="number" id="stock-action-qty" placeholder="Cantidad de Acciones" 
+                                    style="width:100%; padding:12px; background:#1e293b; border:1px solid #475569; border-radius:8px; color:white; font-size:1rem; text-align:center;">
+                            </div>
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                                <button id="btn-modal-buy" class="btn-action" style="background:#22c55e; color:#0f172a; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:1rem;">COMPRAR</button>
+                                <button id="btn-modal-sell" class="btn-action" style="background:#ef4444; color:white; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:1rem;">VENDER</button>
+                            </div>
+                        </div>
 
-                     <div style="font-size:0.9rem; margin-bottom:10px; border-top:1px solid #334155; padding-top:10px;">
-                         <div style="display:flex; justify-content:space-between;">
-                             <span>En Cartera:</span> <span style="color:white">${owned}</span>
-                         </div>
-                         <div style="display:flex; justify-content:space-between;">
-                             <span>Valor:</span> <span style="color:#facc15">${formatCurrency(owned * stock.price)}</span>
-                         </div>
-                     </div>
+                    </div>
+                    `;
 
-                     <input type="number" id="stock-action-qty" placeholder="Cantidad" style="width:100%; padding:10px; background:#1e293b; border:1px solid #475569; color:white; border-radius:6px; box-sizing:border-box;">
-                 </div>
-                 `;
+                    // Overwrite the default modal buttons logic by passing empty array
+                    // We handle buttons manually inside the HTML
+                    // CRITICAL: We replace \n with space because UI.showModal naïvely replaces \n with <br>, breaking HTML tags.
+                    this.showModal(' ', msg.replace(/\n/g, ' '), [], true);
 
-                    this.showModal('Operar en Bolsa', msg, [
-                        {
-                            text: 'Comprar', style: 'success', fn: () => {
-                                const qty = parseInt(document.getElementById('stock-action-qty').value);
-                                if (!qty || qty <= 0) return alert('Cantidad inválida');
-                                const res = StockMarket.buyStock(stock.symbol, qty);
-                                if (res.success) {
-                                    alert(res.message);
-                                    UI.updateHeader();
-                                    UI.updateDashboard();
-                                    UI.updateMarket();
-                                } else {
-                                    alert(res.message);
-                                }
+                    // Attach Handlers
+                    setTimeout(() => {
+                        // Title fix (hack to remove default header if showModal adds one)
+                        const modalTitle = document.querySelector('#modal-content h2');
+                        if (modalTitle) modalTitle.style.display = 'none'; // Hide default title
+
+                        document.getElementById('btn-modal-buy').onclick = () => {
+                            const qty = parseInt(document.getElementById('stock-action-qty').value);
+                            if (!qty || qty <= 0) return alert('Cantidad inválida');
+                            const res = StockMarket.buyStock(stock.symbol, qty);
+                            if (res.success) {
+                                alert(res.message);
+                                UI.updateHeader();
+                                UI.updateDashboard();
+                                UI.updateMarket();
+                                UI.openStockModal(stock); // Refresh
+                            } else {
+                                alert(res.message);
                             }
-                        },
-                        {
-                            text: 'Vender', style: 'danger', fn: () => {
-                                const qty = parseInt(document.getElementById('stock-action-qty').value);
-                                if (!qty || qty <= 0) return alert('Cantidad inválida');
-                                if (owned < qty) return alert('No tienes suficientes acciones');
+                        };
 
-                                const res = StockMarket.sellStock(stock.symbol, qty);
-                                if (res.success) {
-                                    alert(res.message);
-                                    UI.updateHeader();
-                                    UI.updateDashboard();
-                                    UI.updateMarket();
-                                } else {
-                                    alert(res.message);
-                                }
+                        document.getElementById('btn-modal-sell').onclick = () => {
+                            const qty = parseInt(document.getElementById('stock-action-qty').value);
+                            if (!qty || qty <= 0) return alert('Cantidad inválida');
+                            if (owned < qty) return alert('No tienes suficientes acciones');
+                            const res = StockMarket.sellStock(stock.symbol, qty);
+                            if (res.success) {
+                                alert(res.message);
+                                UI.updateHeader();
+                                UI.updateDashboard();
+                                UI.updateMarket();
+                                UI.openStockModal(stock); // Refresh
+                            } else {
+                                alert(res.message);
                             }
-                        },
-                        { text: 'Cancelar', style: 'secondary', fn: null }
-                    ]);
+                        };
+                    }, 50);
 
                     // Init Chart
                     UI.currentOpenStock = stock;
                     UI.stockChartTimeframe = 24;
                     setTimeout(() => UI.updateStockModalChart(), 100);
+                },
+
+                changeTimeframe(months) {
+                    this.stockChartTimeframe = months;
+                    this.updateStockModalChart();
+
+                    // Update Active State Visuals
+                    document.querySelectorAll('.btn-seg').forEach(btn => {
+                        btn.classList.remove('active');
+                        if (parseInt(btn.dataset.tf) === months) btn.classList.add('active');
+                    });
                 },
 
                 updateStockModalChart() {
@@ -3377,14 +3432,6 @@
                         roiEl.style.backgroundColor = bg;
                     }
 
-                    // Update button styles (hacky DOM update for modal buttons)
-                    const btns = document.querySelectorAll('#modal-content .btn-filter');
-                    btns.forEach(b => {
-                        b.classList.remove('active');
-                        if (b.innerText === '6M' && UI.stockChartTimeframe === 6) b.classList.add('active');
-                        if (b.innerText === '2A' && UI.stockChartTimeframe === 24) b.classList.add('active');
-                        if (b.innerText === 'MAX' && UI.stockChartTimeframe === 999) b.classList.add('active');
-                    });
                 },
                 updateBank(BankModule) {
                     const container = document.getElementById('bank-view');
