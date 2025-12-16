@@ -1262,7 +1262,8 @@
                     style="display:flex; align-items:center; gap:5px; padding-right:0;">
                     <button class="nav-btn active" data-view="dashboard">Resumen</button>
                     <button class="nav-btn" data-view="education">Formación</button>
-                    <button class="nav-btn" data-view="job">Trabajo</button>
+                    <button class="nav-btn" data-view="lifestyle">Gastos</button>
+                    <button class="nav-btn" data-view="job">Empleo</button>
                     <button class="nav-btn" data-view="bank">Banco</button>
                     <button class="nav-btn" data-view="real-estate">Inmobiliaria</button>
                     <button class="nav-btn" data-view="market">Bolsa</button>
@@ -1438,6 +1439,11 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- LIFESTYLE VIEW -->
+                    <div id="lifestyle-view" class="view">
+                        <!-- Content injected by UI.updateLifestyle -->
+                    </div>
                 </section>
             </main>
         </div>
@@ -1451,7 +1457,11 @@
             </button>
             <button class="b-nav-item" data-view="education">
                 <span class="icon">🎓</span>
-                <span class="label">Edu</span>
+                <span class="label">Formación</span>
+            </button>
+            <button class="b-nav-item" data-view="lifestyle">
+                <span class="icon">💸</span>
+                <span class="label">Gastos</span>
             </button>
             <button class="b-nav-item" data-view="job">
                 <span class="icon">💼</span>
@@ -1478,10 +1488,17 @@
                 playerName: 'Inversor',
                 month: 1,
                 year: 1,
-                cash: 10000,
-                netWorth: 10000,
+                cash: 500,
+                netWorth: 500,
                 salary: 0,
-                expenses: 800,
+                expenses: 50,
+                lifestyle: {
+                    housing: 'parents', // 0
+                    food: 'scraps', // 50 (Mama)
+                    transport: 'walk', // 0
+                    leisure: 'free', // 0
+                    clothes: 'donations' // 0
+                },
                 jobTitle: 'Desempleado',
                 inventory: {
                     stocks: [],
@@ -1494,8 +1511,8 @@
                 isStudying: false,
                 currentCourse: null, // { name: 'FP Informática', remainingMonths: 12, costMonthly: 0 }
                 history: {
-                    netWorth: [10000],
-                    cash: [10000],
+                    netWorth: [500],
+                    cash: [500],
                     assets: [0],
                     debt: [0],
                     labels: ['Inicio']
@@ -2177,6 +2194,138 @@
             /*******************************************************
              * EDUCATION SYSTEM
              *******************************************************/
+            const LifestyleModule = {
+                categories: {
+                    housing: {
+                        label: 'Vivienda',
+                        items: [
+                            { id: 'parents', name: 'Casa de los Padres', cost: 0, deposit: 0, desc: 'Ahorro máximo. Cero privacidad.' },
+                            { id: 'sofa', name: 'Sofá de un Amigo', cost: 100, deposit: 0, desc: 'Temporal y molesto.' },
+                            { id: 'pension', name: 'Pensión Mala Muerte', cost: 200, deposit: 400, desc: 'Ruidoso y sucio.' },
+                            { id: 'room_cheap', name: 'Habitación Interior', cost: 250, deposit: 1000, desc: 'Sin ventanas, solo para dormir.' },
+                            { id: 'room', name: 'Habitación Compartida', cost: 300, deposit: 1200, desc: 'El estándar de estudiante.' },
+                            { id: 'room_suit', name: 'Habitación con Baño', cost: 450, deposit: 1800, desc: 'Un poco más de dignidad.' },
+                            { id: 'basement', name: 'Sótano / Loft', cost: 600, deposit: 2400, desc: 'Espacioso pero oscuro.' },
+                            { id: 'studio', name: 'Estudio Privado', cost: 900, deposit: 3600, desc: 'Tu propio espacio. Pequeño.' },
+                            { id: 'apt_out', name: 'Piso en las Afueras', cost: 1100, deposit: 4400, desc: 'Grande pero lejos.' },
+                            { id: 'apartment', name: 'Apartamento Céntrico', cost: 1500, deposit: 6000, desc: 'Buena zona, 2 habitaciones.' },
+                            { id: 'loft', name: 'Loft de Diseño', cost: 2500, deposit: 10000, desc: 'Techos altos, ladrillo visto.' },
+                            { id: 'penthouse', name: 'Ático de Lujo', cost: 5000, deposit: 20000, desc: 'Mejores vistas de la ciudad.' },
+                            { id: 'mansion', name: 'Mansión Privada', cost: 15000, deposit: 60000, desc: 'Seguridad privada, piscina, todo.' }
+                        ]
+                    },
+                    food: {
+                        label: 'Alimentación',
+                        items: [
+                            { id: 'scraps', name: 'Comida de la Mamá', cost: 50, desc: 'Tuppers y cariño. Supervivencia.' },
+                            { id: 'noodles', name: 'Ramen Instantáneo', cost: 100, desc: 'Mucha sal, poco precio.' },
+                            { id: 'junk', name: 'Comida Rápida / Básica', cost: 200, desc: 'Grasientiento pero barato.' },
+                            { id: 'cooking_basic', name: 'Cocina Simple', cost: 250, desc: 'Ingredientes marca blanca.' },
+                            { id: 'cooking', name: 'Cocina Variada', cost: 300, desc: 'Carne, pescado y verduras.' },
+                            { id: 'menu', name: 'Menú del Día', cost: 450, desc: 'Comer fuera a diario (barato).' },
+                            { id: 'bio', name: 'Supermercado Bio', cost: 600, desc: 'Todo orgánico y caro.' },
+                            { id: 'delivery', name: 'Delivery Diario', cost: 900, desc: 'Glovo/Uber Eats para todo.' },
+                            { id: 'rest_nice', name: 'Restaurantes Buenos', cost: 1500, desc: 'Sitios de moda y calidad.' },
+                            { id: 'chef', name: 'Chef Privado', cost: 3000, desc: 'Te cocinan en casa.' },
+                            { id: 'michelin', name: 'Ruta Michelin', cost: 10000, desc: 'Solo lo mejor del mundo.' }
+                        ]
+                    },
+                    transport: {
+                        label: 'Transporte',
+                        items: [
+                            { id: 'walk', name: 'Andando', cost: 0, purchaseCost: 0, desc: 'Gratis. Cansa y tarda.' },
+                            { id: 'skate', name: 'Skate / Patines', cost: 0, purchaseCost: 100, desc: 'Rápido en distancias cortas.' },
+                            { id: 'bike', name: 'Bicicleta', cost: 10, purchaseCost: 150, desc: 'Sano y ecológico.' },
+                            { id: 'scooter_el', name: 'Patinete Eléctrico', cost: 20, purchaseCost: 400, desc: 'El rey de la ciudad.' },
+                            { id: 'public', name: 'Transporte Público', cost: 50, purchaseCost: 0, desc: 'Metro y Bus. Fiable.' },
+                            { id: 'moto_125', name: 'Moto 125cc', cost: 100, purchaseCost: 2500, desc: 'Aparcas donde quieres.' },
+                            { id: 'moto_big', name: 'Moto Gran Cilindrada', cost: 200, purchaseCost: 9000, desc: 'Potencia y ruido.' },
+                            { id: 'car_old', name: 'Coche 2ª Mano', cost: 250, purchaseCost: 8000, desc: 'Te lleva y te trae.' },
+                            { id: 'car_new', name: 'Coche Nuevo', cost: 400, purchaseCost: 22000, desc: 'Olor a nuevo, sin problemas.' },
+                            { id: 'car_premium', name: 'Berlina Premium', cost: 600, purchaseCost: 50000, desc: 'Comodidad alemana.' },
+                            { id: 'car_sport', name: 'Deportivo', cost: 1000, purchaseCost: 90000, desc: 'Miradas en cada semáforo.' },
+                            { id: 'supercar', name: 'Superdeportivo', cost: 3000, purchaseCost: 250000, desc: 'Una bestia italiana.' },
+                            { id: 'chofer', name: 'Chófer Privado', cost: 5000, purchaseCost: 0, desc: 'No conduces nunca más.' }
+                        ]
+                    },
+                    leisure: {
+                        label: 'Ocio',
+                        items: [
+                            { id: 'free', name: 'Parque y Sol', cost: 0, desc: 'Aire libre y gratis.' },
+                            { id: 'library', name: 'Libros y Biblioteca', cost: 20, desc: 'Cultura barata.' },
+                            { id: 'internet', name: 'Internet y Juegos', cost: 50, desc: 'Ocio digital casero.' },
+                            { id: 'basic', name: 'Ocio Básico', cost: 100, desc: 'Netflix y alguna caña.' },
+                            { id: 'hobbies', name: 'Hobbies Caseros', cost: 200, desc: 'Maquetas, pintura, cursos.' },
+                            { id: 'active', name: 'Vida Activa', cost: 300, desc: 'Gimnasio, cine y cenas.' },
+                            { id: 'clubbing', name: 'Fiesta y Copas', cost: 500, desc: 'Cerrar discotecas.' },
+                            { id: 'weekend', name: 'Escapadas Fin de Semana', cost: 800, desc: 'Turismo nacional frecuente.' },
+                            { id: 'vip', name: 'Reservados VIP', cost: 1500, desc: 'Botellas y zonas exclusivas.' },
+                            { id: 'travel', name: 'Viajes Internacionales', cost: 3000, desc: 'Japón, NY, Maldivas.' },
+                            { id: 'exclusive', name: 'Clubes Privados', cost: 6000, desc: 'Networking de alto nivel.' },
+                            { id: 'yacht', name: 'Fiestas en Yate', cost: 15000, desc: 'El Lobo de Wall Street.' }
+                        ]
+                    },
+                    clothes: {
+                        label: 'Ropa',
+                        items: [
+                            { id: 'donations', name: 'Ropa Donada', cost: 0, desc: 'Lo que te dan.' },
+                            { id: 'second_hand', name: 'Segunda Mano', cost: 30, desc: 'Wallapop y Humana.' },
+                            { id: 'low_cost', name: 'Mercadillo', cost: 60, desc: 'Barato y funcional.' },
+                            { id: 'basic', name: 'Moda Básica', cost: 100, desc: 'Basicos sin marca.' },
+                            { id: 'fast_fashion', name: 'Fast Fashion', cost: 200, desc: 'Zara, Mango, H&M.' },
+                            { id: 'sport', name: 'Marcas Deportivas', cost: 300, desc: 'Nike, Adidas. Comodidad.' },
+                            { id: 'boutique', name: 'Boutique Local', cost: 500, desc: 'Ropa con personalidad.' },
+                            { id: 'tech', name: 'Techwear / Gadgets', cost: 800, desc: 'Estilo funcional caro.' },
+                            { id: 'suits', name: 'Trajes a Medida', cost: 1500, desc: 'Sastrería clásica.' },
+                            { id: 'designer', name: 'Firmas de Lujo', cost: 3000, desc: 'Gucci, Prada, LV.' },
+                            { id: 'collector', name: 'Coleccionista', cost: 10000, desc: 'Piezas únicas de pasarela.' }
+                        ]
+                    }
+                },
+
+                calculateTotal() {
+                    let total = 0;
+                    const s = GameState.lifestyle;
+                    if (!s) return 750;
+
+                    Object.keys(this.categories).forEach(catKey => {
+                        const itemId = s[catKey];
+                        const item = this.categories[catKey].items.find(i => i.id === itemId);
+                        if (item) total += item.cost;
+                    });
+                    return total;
+                },
+
+                getItem(category, id) {
+                    return this.categories[category].items.find(i => i.id === id);
+                },
+
+                setOption(category, id) {
+                    if (!GameState.lifestyle) return { success: false };
+
+                    // Check if already selected
+                    if (GameState.lifestyle[category] === id) return { success: false, message: 'Ya tienes este nivel.' };
+
+                    const item = this.getItem(category, id);
+                    if (!item) return { success: false, message: 'Opción inválida.' };
+
+                    // UPFRONT COST LOGIC
+                    let upfront = 0;
+                    if (item.deposit) upfront += item.deposit;
+                    if (item.purchaseCost) upfront += item.purchaseCost;
+
+                    if (GameState.cash < upfront) {
+                        return { success: false, message: `Fondos insuficientes. Necesitas ${formatCurrency(upfront)} para el pago inicial (Fianza/Compra).` };
+                    }
+
+                    // DEDUCT & SET
+                    GameState.cash -= upfront;
+                    GameState.lifestyle[category] = id;
+                    GameState.expenses = this.calculateTotal();
+
+                    return { success: true, message: `¡Actualizado! Pagados ${formatCurrency(upfront)} iniciales.` };
+                }
+            };
             const EducationModule = {
                 courses: [
                     // FPs (12 Meses)
@@ -4058,6 +4207,7 @@
                             else if (targetView === 'real-estate') UI.updateRealEstate(RealEstate);
                             else if (targetView === 'job') UI.updateJob(JobSystem);
                             else if (targetView === 'education') UI.updateEducation(EducationModule);
+                            else if (targetView === 'lifestyle') UI.updateLifestyle(LifestyleModule);
                             else if (targetView === 'dashboard') UI.updateDashboard();
 
                             // TRIGGER CONTEXTUAL TUTORIAL
@@ -4197,6 +4347,106 @@
                     showStep();
                 },
 
+
+                updateLifestyle(LifeModule) {
+                    const container = document.getElementById('lifestyle-view');
+                    if (!container) return;
+
+                    const current = GameState.lifestyle;
+                    let totalCost = LifeModule.calculateTotal();
+
+                    // HERO
+                    const heroHTML = `
+                    <div class="edu-hero" style="background:linear-gradient(135deg, #ec4899, #db2777);">
+                        <div class="edu-icon">💸</div>
+                        <div>
+                            <h2 style="margin:0; font-size:1.5rem;">Estilo de Vida</h2>
+                            <p style="color:#fbcfe8; margin:5px 0;">Gastos Mensuales: <strong>${formatCurrency(totalCost)}</strong></p>
+                            <p style="font-size:0.9rem; opacity:0.8;">Tu nivel de vida define tus gastos fijos.</p>
+                        </div>
+                    </div>
+                    `;
+
+                    // CATEGORIES
+                    const categoriesHTML = Object.keys(LifeModule.categories).map(catKey => {
+                        const cat = LifeModule.categories[catKey];
+                        const selectedId = current ? current[catKey] : null;
+
+                        // Find current index
+                        const currentIndex = cat.items.findIndex(i => i.id === selectedId);
+                        const effectiveIndex = currentIndex === -1 ? 0 : currentIndex;
+
+                        // Filter items: Show all up to current + 1
+                        const visibleItems = cat.items.filter((item, index) => index <= effectiveIndex + 1);
+
+                        const itemsHTML = visibleItems.map(item => {
+                            const isSelected = item.id === selectedId;
+                            return `
+                            <div class="course-card-new lifestyle-card ${isSelected ? 'selected' : ''}" style="cursor:pointer; border-color:${isSelected ? '#ec4899' : '#334155'}; background:${isSelected ? 'rgba(236, 72, 153, 0.1)' : '#1e293b'}" data-cat="${catKey}" data-id="${item.id}">
+                                <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                                    <h4 style="margin:0; color:${isSelected ? '#ec4899' : '#fff'}">${item.name}</h4>
+                                    <span style="font-weight:bold;">${formatCurrency(item.cost)}</span>
+                                </div>
+                                <p style="font-size:0.8rem; color:#94a3b8; margin:0;">${item.desc}</p>
+                            </div>
+                            `;
+                        }).join('');
+
+                        return `
+                        <div style="margin-bottom:25px;">
+                            <h3 style="color:#cbd5e1; border-bottom:1px solid #334155; padding-bottom:5px; margin-bottom:15px;">${cat.label}</h3>
+                            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:15px;">
+                                ${itemsHTML}
+                            </div>
+                        </div>
+                        `;
+                    }).join('');
+
+                    container.innerHTML = `
+                        <div class="dashboard-container">
+                            ${heroHTML}
+                            <div style="margin-top:20px;">
+                                ${categoriesHTML}
+                            </div>
+                        </div>
+                    `;
+
+                    // EVENTS
+                    container.querySelectorAll('.lifestyle-card').forEach(card => {
+                        card.onclick = () => {
+                            const cat = card.dataset.cat;
+                            const id = card.dataset.id;
+                            if (current[cat] === id) return; // No change
+
+                            const item = LifeModule.getItem(cat, id);
+
+                            // Calc upfront
+                            let upfront = 0;
+                            let upfrontLabel = '';
+                            if (item.deposit) {
+                                upfront += item.deposit;
+                                upfrontLabel = `Fianza: ${formatCurrency(item.deposit)}`;
+                            }
+                            if (item.purchaseCost) {
+                                upfront += item.purchaseCost;
+                                upfrontLabel = `Compra: ${formatCurrency(item.purchaseCost)}`;
+                            }
+
+                            const costMsg = upfront > 0 ? `\n\n❗ Requiere PAGO INICIAL: ${formatCurrency(upfront)} (${upfrontLabel})` : '';
+
+                            UI.confirmModal('Cambiar Estilo de Vida', `¿Cambiar ${LifeModule.categories[cat].label} a:\n\n${item.name}\nCoste: ${formatCurrency(item.cost)}/mes?${costMsg}`, () => {
+                                const res = LifeModule.setOption(cat, id);
+                                if (res.success) {
+                                    UI.updateLifestyle(LifeModule);
+                                    UI.updateHeader();
+                                    alert(res.message); // Feedback
+                                } else {
+                                    alert(res.message); // Error feedback
+                                }
+                            });
+                        };
+                    });
+                },
 
                 updateEducation(EduModule) {
                     const container = document.getElementById('education-view');
@@ -5214,6 +5464,11 @@
                 JobSystem.nextTurn();
                 EducationModule.nextTurn(); // Study progress
                 CompanyModule.nextTurn(); // Company Progress
+
+                // Dynamic Expenses
+                if (GameState.lifestyle) {
+                    GameState.expenses = LifestyleModule.calculateTotal();
+                }
 
                 const rentIncome = GameState.inventory.realEstate.reduce((acc, p) => acc + p.monthlyRent, 0);
                 const netIncome = GameState.salary + rentIncome - GameState.expenses;
