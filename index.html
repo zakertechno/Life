@@ -3353,32 +3353,38 @@
                         const modalTitle = document.querySelector('#modal-content h2');
                         if (modalTitle) modalTitle.style.display = 'none'; // Hide default title
 
-                        document.getElementById('btn-modal-buy').onclick = () => {
+                        document.getElementById('btn-modal-buy').onclick = (e) => {
                             const qty = parseInt(document.getElementById('stock-action-qty').value);
                             if (!qty || qty <= 0) return alert('Cantidad inválida');
                             const res = StockMarket.buyStock(stock.symbol, qty);
                             if (res.success) {
+                                // Close the modal first
+                                const overlay = e.target.closest('.custom-modal-overlay');
+                                if (overlay) overlay.remove();
+
                                 alert(res.message);
                                 UI.updateHeader();
                                 UI.updateDashboard();
                                 UI.updateMarket();
-                                UI.openStockModal(stock); // Refresh
                             } else {
                                 alert(res.message);
                             }
                         };
 
-                        document.getElementById('btn-modal-sell').onclick = () => {
+                        document.getElementById('btn-modal-sell').onclick = (e) => {
                             const qty = parseInt(document.getElementById('stock-action-qty').value);
                             if (!qty || qty <= 0) return alert('Cantidad inválida');
                             if (owned < qty) return alert('No tienes suficientes acciones');
                             const res = StockMarket.sellStock(stock.symbol, qty);
                             if (res.success) {
+                                // Close the modal first
+                                const overlay = e.target.closest('.custom-modal-overlay');
+                                if (overlay) overlay.remove();
+
                                 alert(res.message);
                                 UI.updateHeader();
                                 UI.updateDashboard();
                                 UI.updateMarket();
-                                UI.openStockModal(stock); // Refresh
                             } else {
                                 alert(res.message);
                             }
