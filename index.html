@@ -1051,16 +1051,33 @@
 
             /* Stock Detail Modal Sizing */
             .modal-content {
-                width: 95% !important;
-                max-width: 95% !important;
-                padding: 15px !important;
-                margin: 10px auto !important;
-                max-height: 90vh !important;
+                width: 90% !important;
+                max-width: 90% !important;
+                padding: 10px !important;
+                margin: 5vh auto !important;
+                /* Centered with vertical margin */
+                max-height: 85vh !important;
                 overflow-y: auto !important;
             }
 
             #modal-stock-chart {
-                max-height: 250px !important;
+                max-height: 180px !important;
+                /* Significantly reduced for mobile */
+            }
+
+            /* Compact Modal Text for Mobile */
+            #modal-stock-name {
+                font-size: 1.2rem !important;
+                margin-bottom: 5px !important;
+            }
+
+            #modal-stock-price {
+                font-size: 1.1rem !important;
+            }
+
+            .stock-fundamentals {
+                font-size: 0.8rem !important;
+                gap: 5px !important;
             }
         }
     </style>
@@ -3251,36 +3268,40 @@
                     const avg = portfolioItem ? portfolioItem.avgPrice : 0;
 
                     const msg = `
-                 <div style="margin-bottom:15px; background:#0f172a; padding:10px; border-radius:6px;">
-                     <!-- CHART HEADER -->
+                 <div class="stock-modal-compact" style="margin-bottom:10px;">
+                     <!-- COMPACT HEADER -->
                      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                        <div style="font-weight:bold; color:#fff;">
-                            ${stock.name} 
-                            <span id="chart-roi-display" style="font-size:0.8rem; margin-left:10px; padding:2px 6px; border-radius:4px;"></span>
+                        <div style="font-weight:bold; color:#fff; font-size:1.1rem;">
+                            ${stock.name} <small style="color:#94a3b8">(${stock.symbol})</small>
                         </div>
-                        <div style="display:flex; gap:5px;">
-                            <button class="btn-filter ${UI.stockChartTimeframe === 6 ? 'active' : ''}" onclick="UI.stockChartTimeframe=6; UI.updateStockModalChart()">6M</button>
-                            <button class="btn-filter ${UI.stockChartTimeframe === 24 ? 'active' : ''}" onclick="UI.stockChartTimeframe=24; UI.updateStockModalChart()">2A</button>
-                            <button class="btn-filter ${UI.stockChartTimeframe === 999 ? 'active' : ''}" onclick="UI.stockChartTimeframe=999; UI.updateStockModalChart()">MAX</button>
+                        <div style="text-align:right;">
+                             <div style="font-size:1.2rem; color:${stock.trend >= 0 ? '#4ade80' : '#f87171'}">${formatCurrency(stock.price)}</div>
+                             <div style="font-size:0.75rem; color:#94a3b8;">${(stock.trend * 100).toFixed(2)}%</div>
                         </div>
                      </div>
                      
-                     <!-- CHART CANAVS -->
-                     <div style="height:150px; width:100%; margin-bottom:10px;">
+                     <!-- COMPACT CHART -->
+                     <div class="stock-chart-container" style="height:120px; width:100%; margin-bottom:10px; background:#0f172a; border-radius:6px;">
                         <canvas id="stock-modal-chart"></canvas>
                      </div>
 
-                     <div style="display:flex; justify-content:space-between; align-items:end;">
-                        <div style="font-size:1.5rem; color:${stock.trend >= 0 ? '#4ade80' : '#f87171'}">${formatCurrency(stock.price)}</div>
-                        <div style="font-size:0.9rem; color:#94a3b8;">Tendencia: ${(stock.trend * 100).toFixed(2)}%</div>
+                     <!-- TIMEFRAME BUTTONS -->
+                     <div style="display:flex; justify-content:center; gap:5px; margin-bottom:15px;">
+                        <button class="btn-filter ${UI.stockChartTimeframe === 6 ? 'active' : ''}" onclick="UI.stockChartTimeframe=6; UI.updateStockModalChart()">6M</button>
+                        <button class="btn-filter ${UI.stockChartTimeframe === 24 ? 'active' : ''}" onclick="UI.stockChartTimeframe=24; UI.updateStockModalChart()">2A</button>
+                        <button class="btn-filter ${UI.stockChartTimeframe === 999 ? 'active' : ''}" onclick="UI.stockChartTimeframe=999; UI.updateStockModalChart()">MAX</button>
                      </div>
-                 </div>
-                 <div style="margin-bottom:15px;">
-                     <p>En Cartera: <strong>${owned}</strong> acciones</p>
-                     <p>Valor de Mercado: <strong>${formatCurrency(owned * stock.price)}</strong></p>
-                 </div>
-                 <div style="display:flex; flex-direction:column; gap:10px;">
-                     <input type="number" id="stock-action-qty" placeholder="Cantidad" style="padding:10px; background:#1e293b; border:1px solid #475569; color:white; border-radius:6px;">
+
+                     <div style="font-size:0.9rem; margin-bottom:10px; border-top:1px solid #334155; padding-top:10px;">
+                         <div style="display:flex; justify-content:space-between;">
+                             <span>En Cartera:</span> <span style="color:white">${owned}</span>
+                         </div>
+                         <div style="display:flex; justify-content:space-between;">
+                             <span>Valor:</span> <span style="color:#facc15">${formatCurrency(owned * stock.price)}</span>
+                         </div>
+                     </div>
+
+                     <input type="number" id="stock-action-qty" placeholder="Cantidad" style="width:100%; padding:10px; background:#1e293b; border:1px solid #475569; color:white; border-radius:6px; box-sizing:border-box;">
                  </div>
                  `;
 
