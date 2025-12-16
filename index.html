@@ -1945,7 +1945,11 @@
                 if (amount <= 0) return { success: false, message: 'La cantidad debe ser mayor a 0' };
 
                 const max = this.getMaxLoanAmount();
-                const currentDebt = GameState.loans.reduce((sum, l) => sum + l.remainingBalance, 0);
+                // Exclude mortgages from personal credit limit check
+                const currentDebt = GameState.loans
+                    .filter(l => !l.type.includes('Hipotecario'))
+                    .reduce((sum, l) => sum + l.remainingBalance, 0);
+
                 const available = Math.max(0, max - currentDebt);
 
                 if (amount > available) return { success: false, message: `Límite excedido. Te quedan ${formatCurrency(available)} de crédito disponible (Total: ${formatCurrency(max)}).` };
@@ -2077,7 +2081,7 @@
                 const sizeM2 = Math.floor(Math.random() * (typeVar.maxM2 - typeVar.minM2) + typeVar.minM2);
                 const pricePerM2 = Math.floor(Math.random() * (typeVar.maxPrice - typeVar.minPrice) + typeVar.minPrice);
 
-                const finalPricePerM2 = Math.floor(pricePerM2 * this.marketTrend);
+                const finalPricePerM2 = Math.floor(pricePerM2 * (this.marketTrend || 1));
                 const price = sizeM2 * finalPricePerM2;
                 const zoneAvgPrice = Math.floor(finalPricePerM2 * (1 + ((Math.random() * 0.2) - 0.1)));
 
@@ -2093,8 +2097,8 @@
                 return {
                     id: Date.now() + Math.floor(Math.random() * 100000),
                     name: typeVar.name,
-                    price: price,
-                    monthlyRent: monthlyRent,
+                    price: isNaN(price) ? 100000 : price,
+                    monthlyRent: isNaN(monthlyRent) ? 500 : monthlyRent,
                     downPaymentPct: 0.20,
                     sizeM2: sizeM2,
                     pricePerM2: finalPricePerM2,
@@ -3846,15 +3850,21 @@
                 let totalVal = 0;
                 let totalRent = 0;
                 let totalEquity = 0;
+                let totalMortgagePayment = 0;
 
                 owned.forEach(p => {
                     totalVal += p.price;
                     totalRent += p.monthlyRent;
                 });
-                // Simple equity approximation (Value - Mortgages)
-                // We need to check loans for mortgages
+
+                // Calculate Equity and Mortgage Payments
                 let mortgageDebt = 0;
-                GameState.loans.forEach(l => { if (l.type === 'Hipotecario') mortgageDebt += l.remainingBalance; });
+                GameState.loans.forEach(l => {
+                    if (l.type.includes('Hipotecario')) {
+                        mortgageDebt += l.remainingBalance;
+                        totalMortgagePayment += l.monthlyPayment;
+                    }
+                });
                 totalEquity = totalVal - mortgageDebt;
 
                 // RENDER
@@ -3866,18 +3876,18 @@
                         </div>
 
                         <!-- HERO STATS -->
-                        <div class="re-stats-container" style="display:flex; justify-content:space-between; gap:15px; margin-bottom:20px;">
-                            <div class="portfolio-stat re-stat-card" style="flex:1; background:#1e293b; padding:15px; border-radius:12px; border:1px solid #334155; text-align:center;">
-                                <span class="label" style="display:block; color:#94a3b8; font-size:0.85rem; margin-bottom:5px;">Valor Cartera</span>
-                                <span class="value" style="font-size:1.2rem; font-weight:bold; color:white;">${formatCurrency(totalVal)}</span>
+                        <div class="re-stats-container" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:20px;">
+                            <div class="portfolio-stat re-stat-card" style="flex:2; background:#1e293b; padding:15px; border-radius:12px; border:1px solid #334155; text-align:center; min-width: 200px;">
+                                <span class="label" style="display:block; color:#94a3b8; font-size:0.85rem; margin-bottom:5px;">Patrimonio Neto</span>
+                                <span class="value" style="font-size:1.4rem; font-weight:bold; color:#facc15;">${formatCurrency(totalEquity)}</span>
                             </div>
-                            <div class="portfolio-stat re-stat-card" style="flex:1; background:#1e293b; padding:15px; border-radius:12px; border:1px solid #334155; text-align:center;">
-                                <span class="label" style="display:block; color:#94a3b8; font-size:0.85rem; margin-bottom:5px;">Patrimonio</span>
-                                <span class="value" style="font-size:1.2rem; font-weight:bold; color:#facc15;">${formatCurrency(totalEquity)}</span>
-                            </div>
-                             <div class="portfolio-stat re-stat-card" style="flex:1; background:#1e293b; padding:15px; border-radius:12px; border:1px solid #334155; text-align:center;">
+                             <div class="portfolio-stat re-stat-card" style="flex:1; background:#1e293b; padding:15px; border-radius:12px; border:1px solid #334155; text-align:center; min-width: 140px;">
                                 <span class="label" style="display:block; color:#94a3b8; font-size:0.85rem; margin-bottom:5px;">Rentas / mes</span>
-                                <span class="value" style="font-size:1.2rem; font-weight:bold; color:#4ade80;">+${formatCurrency(totalRent)}</span>
+                                <span class="value" style="font-size:1.1rem; font-weight:bold; color:#4ade80;">+${formatCurrency(totalRent)}</span>
+                            </div>
+                            <div class="portfolio-stat re-stat-card" style="flex:1; background:#1e293b; padding:15px; border-radius:12px; border:1px solid #334155; text-align:center; min-width: 140px;">
+                                <span class="label" style="display:block; color:#94a3b8; font-size:0.85rem; margin-bottom:5px;">Deudas / mes</span>
+                                <span class="value" style="font-size:1.1rem; font-weight:bold; color:#f87171;">-${formatCurrency(totalMortgagePayment)}</span>
                             </div>
                         </div>
 
@@ -3944,6 +3954,11 @@
                             const color = diff >= 0 ? '#4ade80' : '#f87171';
                             const sign = diff >= 0 ? '+' : '';
 
+                            const mortgage = GameState.loans.find(l => l.id === prop.mortgageId);
+                            const debtHtml = mortgage
+                                ? `<div>Deudas: <span style="color:#f87171">-${formatCurrency(mortgage.monthlyPayment)}/mes</span></div>`
+                                : '';
+
                             return `
                                     <div style="background:#0f172a; padding:15px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">
                                         <div>
@@ -3952,6 +3967,7 @@
                                                 <div>Compra: ${formatCurrency(purchasePrice)} | Actual: ${formatCurrency(prop.price)}</div>
                                                 <div style="color:${color}; font-weight:bold;">Revalorización: ${sign}${pct}%</div>
                                                 <div>Rentas: <span style="color:#4ade80">+${formatCurrency(prop.monthlyRent)}/mes</span></div>
+                                                ${debtHtml}
                                             </div>
                                         </div>
                                         <button class="btn-sell-prop-dynamic" data-id="${prop.id}" style="background:#ef4444; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">Vender</button>
@@ -5572,7 +5588,7 @@
                 .custom-modal-box { background:#1e293b; padding:25px; border-radius:12px; max-width:450px; width:90%; border:1px solid #475569; box-shadow:0 20px 50px rgba(0,0,0,0.5); transform:scale(0.95); animation: popUp 0.2s forwards; }
                 .custom-modal-box h3 { margin-top:0; color:#facc15; font-size:1.3rem; margin-bottom:15px; border-bottom:1px solid #334155; padding-bottom:10px; }
                 .modal-body { color:#cbd5e1; font-size:0.95rem; line-height:1.5; margin-bottom:25px; }
-                .modal-actions { display:flex; justify-content:flex-end; gap:12px; }
+                .modal-actions { display:flex; justify-content:center; flex-wrap:wrap; gap:12px; }
                 .btn-modal { padding:8px 16px; border-radius:6px; font-weight:bold; cursor:pointer; border:none; transition:transform 0.1s; }
                 .btn-modal:active { transform:scale(0.95); }
                 .btn-primary-modal { background:var(--accent-color); color:#0f172a; }
