@@ -4577,9 +4577,32 @@
                     #view-container { margin-bottom: 80px; }
 
                     /* Layout Stacks */
-                    .dashboard-grid, .bank-grid, .stats-grid, .market-hero, .prop-details-grid, .summary-kpi-row { grid-template-columns: 1fr !important; }
-                    .hero-card, .market-card, .property-card-expert, .course-card-new, .dashboard-card, .kpi-box { margin-bottom: 10px; }
+                    .dashboard-grid, .bank-grid, .stats-grid, .market-hero, .prop-details-grid, .summary-kpi-row, .market-grid, .listings-grid, .course-grid { grid-template-columns: 1fr !important; }
+                    .hero-card, .market-card, .property-card-expert, .course-card-new, .dashboard-card, .kpi-box, .stock-chip { margin-bottom: 10px; }
                     
+                    /* Specific View Optimizations */
+                    /* Market */
+                    .market-container { padding-bottom: 20px; }
+                    .market-hero { gap: 10px; padding: 15px !important; }
+                    
+                    /* Bank */
+                    .bank-container { display: flex; flex-direction: column; gap: 20px; }
+                    .loan-calculator { padding: 15px !important; }
+                    
+                    /* Real Estate */
+                    .re-container { display: flex; flex-direction: column; gap: 20px; }
+                    .property-card-expert { flex-direction: row; align-items: center; } /* Compact row for prop? No, column is better for details */
+                    .property-card-expert { flex-direction: column; } 
+                    .prop-img { height: 150px; }
+                    
+                    /* Job */
+                    .job-container { display: flex; flex-direction: column; gap: 20px; }
+                    .job-card { padding: 15px !important; }
+                    
+                    /* Education */
+                    .edu-hero { flex-direction: column; text-align: center; padding: 20px !important; }
+                    .edu-icon { margin-bottom: 10px; }
+
                     /* Dashboard Compact */
                     .dashboard-card { padding: 15px !important; }
                     .kpi-box { padding: 15px !important; display: flex; justify-content: space-between; align-items: center; text-align: left; }
