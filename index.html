@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Juego de Inversión</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -4602,6 +4602,27 @@
                     .job-card { padding: 15px !important; }
                     .job-card h4 { font-size: 1.1rem !important; }
                     .promotion-area { padding: 15px !important; }
+
+                    /* COMPANY DASHBOARD & WIZARD */
+                    .wizard-grid { grid-template-columns: 1fr !important; }
+                    .wizard-option { padding: 20px !important; display: flex; flex-direction: row; align-items: center; justify-content: start; gap: 20px; text-align: left; }
+                    .wizard-option div:first-child { margin-bottom: 0 !important; font-size: 2.5rem !important; } /* Icon */
+                    
+                    .company-header { flex-direction: column; align-items: flex-start; gap: 15px; }
+                    .company-finance-summary { width: 100%; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+                    .fin-box { padding: 8px 5px; }
+                    .fin-box .val { font-size: 0.9rem; }
+                    #btn-automate { padding: 8px 5px; font-size: 0.7rem !important; }
+
+                    .company-tabs { padding-bottom: 5px; justify-content: space-between; }
+                    .tab-btn { padding: 8px 10px; font-size: 0.9rem; }
+
+                    /* Strategy / Product / Marketing Cards */
+                    .options-grid { grid-template-columns: 1fr !important; }
+                    .invest-grid { display: flex; flex-direction: column; gap: 15px; }
+                    
+                    /* Force inline grids to stack (Product Pricing/Analysis) */
+                    .strategy-section > div[style*="grid-template-columns"] { grid-template-columns: 1fr !important; gap: 15px !important; }
                     
                     /* Education */
                     .edu-hero { flex-direction: column; text-align: center; padding: 20px !important; }
