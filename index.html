@@ -1150,11 +1150,11 @@
                 <nav id="main-nav" class="desktop-nav"
                     style="display:flex; align-items:center; gap:5px; padding-right:0;">
                     <button class="nav-btn active" data-view="dashboard">Resumen</button>
-                    <button class="nav-btn" data-view="market">Bolsa</button>
-                    <button class="nav-btn" data-view="real-estate">Inmobiliaria</button>
-                    <button class="nav-btn" data-view="bank">Banco</button>
-                    <button class="nav-btn" data-view="job">Trabajo</button>
                     <button class="nav-btn" data-view="education">Formación</button>
+                    <button class="nav-btn" data-view="job">Trabajo</button>
+                    <button class="nav-btn" data-view="bank">Banco</button>
+                    <button class="nav-btn" data-view="real-estate">Inmobiliaria</button>
+                    <button class="nav-btn" data-view="market">Bolsa</button>
                 </nav>
 
                 <section id="view-container">
@@ -1338,25 +1338,25 @@
                 <span class="icon">🏠</span>
                 <span class="label">Resumen</span>
             </button>
-            <button class="b-nav-item" data-view="market">
-                <span class="icon">📈</span>
-                <span class="label">Bolsa</span>
-            </button>
-            <button class="b-nav-item" data-view="real-estate">
-                <span class="icon">🏘️</span>
-                <span class="label">Inmuebles</span>
-            </button>
-            <button class="b-nav-item" data-view="bank">
-                <span class="icon">🏦</span>
-                <span class="label">Banco</span>
+            <button class="b-nav-item" data-view="education">
+                <span class="icon">🎓</span>
+                <span class="label">Edu</span>
             </button>
             <button class="b-nav-item" data-view="job">
                 <span class="icon">💼</span>
                 <span class="label">Trabajo</span>
             </button>
-            <button class="b-nav-item" data-view="education">
-                <span class="icon">🎓</span>
-                <span class="label">Edu</span>
+            <button class="b-nav-item" data-view="bank">
+                <span class="icon">🏦</span>
+                <span class="label">Banco</span>
+            </button>
+            <button class="b-nav-item" data-view="real-estate">
+                <span class="icon">🏘️</span>
+                <span class="label">Inmuebles</span>
+            </button>
+            <button class="b-nav-item" data-view="market">
+                <span class="icon">📈</span>
+                <span class="label">Bolsa</span>
             </button>
         </nav>
         <script>
@@ -4577,8 +4577,14 @@
                     #view-container { margin-bottom: 80px; }
 
                     /* Layout Stacks */
-                    .dashboard-grid, .bank-grid, .stats-grid, .market-hero, .prop-details-grid { grid-template-columns: 1fr !important; }
-                    .hero-card, .market-card, .property-card-expert, .course-card-new, .dashboard-card { margin-bottom: 15px; }
+                    .dashboard-grid, .bank-grid, .stats-grid, .market-hero, .prop-details-grid, .summary-kpi-row { grid-template-columns: 1fr !important; }
+                    .hero-card, .market-card, .property-card-expert, .course-card-new, .dashboard-card, .kpi-box { margin-bottom: 10px; }
+                    
+                    /* Dashboard Compact */
+                    .dashboard-card { padding: 15px !important; }
+                    .kpi-box { padding: 15px !important; display: flex; justify-content: space-between; align-items: center; text-align: left; }
+                    .kpi-value { font-size: 1.4rem !important; }
+                    .kpi-label { font-size: 0.75rem !important; margin: 0; }
                     
                     /* Typography sizes */
                     h1 { font-size: 1.2rem !important; }
